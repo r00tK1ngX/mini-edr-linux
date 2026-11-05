@@ -188,7 +188,7 @@ def test_e2e_fim_file_tampering_detects_and_creates_security_event(live_server, 
     # Verify event stored in security_events table in SQLite
     with closing(get_connection(db_path)) as conn:
         events = conn.execute(
-            "SELECT * FROM security_events WHERE agent_id = ?",
+            "SELECT * FROM security_events WHERE agent_id = ? AND event_type = 'fim_file_modified'",
             ("lab-linux-tamper",),
         ).fetchall()
         assert len(events) == 1
