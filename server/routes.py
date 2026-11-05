@@ -667,6 +667,7 @@ def get_alerts():
         return _error(f"Invalid severity filter '{severity}'")
 
     agent_id = request.args.get("agent_id")
+    rule_id = request.args.get("rule_id")
 
     limit_param = request.args.get("limit", "50")
     try:
@@ -685,10 +686,17 @@ def get_alerts():
         return _error("offset must be a valid integer")
 
     try:
+        total = alert_repo.count(
+            status=status,
+            severity=severity,
+            agent_id=agent_id,
+            rule_id=rule_id,
+        )
         alerts = alert_repo.list_alerts(
             status=status,
             severity=severity,
             agent_id=agent_id,
+            rule_id=rule_id,
             limit=limit,
             offset=offset,
         )
@@ -698,10 +706,31 @@ def get_alerts():
 
     return jsonify({
         "success": True,
+        "total": total,
         "count": len(alerts),
         "limit": limit,
         "offset": offset,
         "alerts": alerts,
+    }), 200
+
+
+@api_bp.get("/alerts/summary")
+@api_bp.get("/alerts/stats")
+def get_alerts_summary():
+    """Get aggregated alert metrics grouped by status and severity."""
+    db_path = current_app.config["DATABASE_PATH"]
+    alert_repo = AlertRepository(db_path)
+
+    agent_id = request.args.get("agent_id")
+    try:
+        summary = alert_repo.get_summary(agent_id=agent_id)
+    except Exception:
+        current_app.logger.exception("Failed to get alerts summary")
+        return _error("Internal server error", 500)
+
+    return jsonify({
+        "success": True,
+        "summary": summary,
     }), 200
 
 
@@ -729,9 +758,19 @@ def get_alert_detail(alert_id: int):
 
 @api_bp.post("/alerts/<int:alert_id>/acknowledge")
 def acknowledge_alert(alert_id: int):
-    """Transition alert to acknowledged status."""
+    """Transition alert to acknowledged status with optional note."""
     db_path = current_app.config["DATABASE_PATH"]
     alert_repo = AlertRepository(db_path)
+
+    note = None
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict):
+            n = data.get("note") or data.get("resolution_note")
+            if n is not None:
+                if not isinstance(n, str) or len(n) > 2000:
+                    return _error("note must be a string of at most 2000 characters or null")
+                note = n
 
     try:
         alert = alert_repo.get_by_id(alert_id)
@@ -747,9 +786,10 @@ def acknowledge_alert(alert_id: int):
                 "alert_id": alert_id,
                 "status": "acknowledged",
                 "acknowledged_at": alert["acknowledged_at"],
+                "resolution_note": alert.get("resolution_note"),
             }), 200
 
-        updated = alert_repo.acknowledge(alert_id)
+        updated = alert_repo.acknowledge(alert_id, note=note)
     except Exception:
         current_app.logger.exception("Failed to acknowledge alert")
         return _error("Internal server error", 500)
@@ -759,6 +799,7 @@ def acknowledge_alert(alert_id: int):
         "alert_id": alert_id,
         "status": "acknowledged",
         "acknowledged_at": updated["acknowledged_at"],
+        "resolution_note": updated.get("resolution_note"),
     }), 200
 
 
@@ -772,7 +813,7 @@ def resolve_alert(alert_id: int):
     if request.is_json:
         data = request.get_json(silent=True)
         if isinstance(data, dict):
-            note = data.get("resolution_note")
+            note = data.get("resolution_note") or data.get("note")
             if note is not None:
                 if not isinstance(note, str) or len(note) > 2000:
                     return _error("resolution_note must be a string of at most 2000 characters or null")
@@ -803,4 +844,50 @@ def resolve_alert(alert_id: int):
         "status": "resolved",
         "resolved_at": updated["resolved_at"],
         "resolution_note": updated.get("resolution_note"),
+    }), 200
+
+
+@api_bp.post("/alerts/<int:alert_id>/dismiss")
+def dismiss_alert(alert_id: int):
+    """Dismiss an alert as false positive / ignored, transitioning it to resolved."""
+    db_path = current_app.config["DATABASE_PATH"]
+    alert_repo = AlertRepository(db_path)
+
+    dismiss_note = "Dismissed by operator (false positive / ignored)"
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict):
+            note = data.get("resolution_note") or data.get("note")
+            if note is not None:
+                if not isinstance(note, str) or len(note) > 2000:
+                    return _error("resolution_note must be a string of at most 2000 characters or null")
+                dismiss_note = note
+
+    try:
+        alert = alert_repo.get_by_id(alert_id)
+        if not alert:
+            return _error(f"Alert {alert_id} not found", 404)
+
+        if alert["status"] == "resolved":
+            return jsonify({
+                "success": True,
+                "alert_id": alert_id,
+                "status": "resolved",
+                "resolved_at": alert["resolved_at"],
+                "resolution_note": alert["resolution_note"],
+                "dismissed": True,
+            }), 200
+
+        updated = alert_repo.dismiss(alert_id, note=dismiss_note)
+    except Exception:
+        current_app.logger.exception("Failed to dismiss alert")
+        return _error("Internal server error", 500)
+
+    return jsonify({
+        "success": True,
+        "alert_id": alert_id,
+        "status": "resolved",
+        "resolved_at": updated["resolved_at"],
+        "resolution_note": updated.get("resolution_note"),
+        "dismissed": True,
     }), 200
