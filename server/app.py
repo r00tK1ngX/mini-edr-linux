@@ -62,13 +62,18 @@ def create_app(test_config=None):
     return app
 
 
-app = create_app()
-
-
 if __name__ == "__main__":
-    if not app.config.get("EDR_API_TOKEN"):
+    app = create_app()
+    api_token = app.config.get("EDR_API_TOKEN")
+    if (
+        not isinstance(api_token, str)
+        or len(api_token) < 32
+        or api_token == "replace-with-a-long-random-token"
+    ):
         raise SystemExit(
-            "EDR_API_TOKEN is not configured. Create a .env file before starting the server."
+            "EDR_API_TOKEN is missing or too weak. Generate a token with "
+            "'python -c \"import secrets; print(secrets.token_urlsafe(32))\"' "
+            "and put it in .env."
         )
 
     app.run(
