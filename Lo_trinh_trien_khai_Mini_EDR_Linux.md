@@ -526,23 +526,20 @@ Chức năng đã xây dựng:
 
 ### Module 3 --- `agent/file_integrity.py`
 
-Triển khai File Integrity Monitoring (FIM):
+**Đã hoàn thành và có 7 unit tests vượt qua (`tests/test_file_integrity.py`).**
 
--   Quét thư mục được cấu hình.
--   Tạo baseline ban đầu.
--   Tính SHA-256.
--   Phát hiện file mới, sửa đổi và xóa.
--   Có thể dùng mtime/size để lọc trước khi tính hash.
--   Không theo dõi toàn bộ filesystem mặc định.
--   Xử lý symlink, permission và file thay đổi trong lúc đọc.
+Chức năng đã xây dựng:
 
-Ví dụ event:
-
-``` text
-[FILE CREATED] /tmp/demo.txt
-[FILE MODIFIED] /etc/example.conf
-[FILE DELETED] /opt/app/old.conf
-```
+-   Hàm `compute_sha256()` tính mã băm SHA-256 theo từng chunk 64KB, giới hạn kích thước file an toàn tránh treo bộ nhớ, kiểm tra file rỗng chuẩn `e3b0c442...`.
+-   Hàm `inspect_file()` kiểm tra file thông thường, lấy kích thước byte, thời điểm sửa đổi `mtime_ns`, quyền hạn `file_mode` (mask `0o7777`) và hash SHA-256.
+-   Hàm `scan_monitored_paths()` quét các tệp và thư mục được cấu hình, hỗ trợ quét đệ quy (recursive) hoặc 1 cấp, bỏ qua an toàn các symlink vòng lặp hoặc file thiếu quyền đọc.
+-   Hàm `detect_file_changes()` so sánh quét hiện tại với baseline:
+    -   Phát hiện file tạo mới (`change_type = 'created'`).
+    -   Phát hiện file bị chỉnh sửa nội dung hoặc quyền (`change_type = 'modified'`).
+    -   Phát hiện file bị xóa (`change_type = 'deleted'`), tự động cập nhật trạng thái `state = 'missing'` trong baseline nhưng vẫn bảo lưu hash cũ để phục vụ forensics.
+-   Hàm `format_baseline_sync_payload()` chuẩn hóa payload đồng bộ baseline (`POST /api/v1/file-baselines`) theo đúng Data Contract.
+-   Hàm `format_fim_security_event()` sinh sự kiện an ninh tương ứng (`fim_file_created`, `fim_file_modified`, `fim_file_deleted`) kèm fingerprint và evidence chi tiết.
+-   Cung cấp lớp hướng đối tượng `FileIntegrityMonitor`.
 
 ### Module 4 --- `agent/client.py`
 

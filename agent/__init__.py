@@ -1,5 +1,14 @@
 """Mini EDR Linux Agent package."""
 
+from agent.file_integrity import (
+    FileIntegrityMonitor,
+    compute_sha256,
+    detect_file_changes,
+    format_baseline_sync_payload,
+    format_fim_security_event,
+    inspect_file,
+    scan_monitored_paths,
+)
 from agent.process_collector import (
     ProcessCollector,
     collect_process_snapshot,
@@ -20,12 +29,17 @@ from agent.system_collector import (
 )
 
 __all__ = [
+    "FileIntegrityMonitor",
     "ProcessCollector",
     "SystemCollector",
     "collect_metrics",
     "collect_process_snapshot",
     "collect_processes",
     "collect_system_info",
+    "compute_sha256",
+    "detect_file_changes",
+    "format_baseline_sync_payload",
+    "format_fim_security_event",
     "get_cpu_percent",
     "get_disk_percent",
     "get_hostname",
@@ -34,4 +48,6 @@ __all__ = [
     "get_os_info",
     "get_process_by_pid",
     "get_uptime_seconds",
+    "inspect_file",
+    "scan_monitored_paths",
 ]
