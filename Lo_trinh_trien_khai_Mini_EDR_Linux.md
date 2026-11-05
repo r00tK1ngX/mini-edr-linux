@@ -482,7 +482,7 @@ Kiểm thử đã đạt:
 
 ## Phase 3 --- Xây dựng Linux Agent
 
-**Trạng thái: Chưa triển khai theo roadmap.**
+**Trạng thái: Đang triển khai (Đã hoàn thành Module 1).**
 
 ### Mục tiêu
 
@@ -490,18 +490,19 @@ Agent chạy trên Linux, thu thập dữ liệu thực tế và gửi về Serv
 
 ### Module 1 --- `agent/system_collector.py`
 
-Thu thập:
+**Đã hoàn thành và có 16 unit tests vượt qua (`tests/test_system_collector.py`).**
 
--   Hostname.
--   IP address.
--   Operating System.
--   CPU usage.
--   RAM usage.
--   Disk usage.
--   Uptime.
+Chức năng đã xây dựng:
 
-Dùng `psutil`. Phải xử lý trường hợp permission error, interface không
-có IP và giá trị không lấy được.
+-   Thu thập `Hostname` qua socket/platform/`/etc/hostname`.
+-   Thu thập `IP address` qua routing socket UDP & psutil interfaces (trả về `None` an toàn nếu không có mạng).
+-   Thu thập `Operating System` qua `platform.freedesktop_os_release()`, `/etc/os-release` và platform fallback.
+-   Thu thập `CPU usage` qua `psutil.cpu_percent` (ràng buộc chuẩn `0.0` đến `100.0%`).
+-   Thu thập `RAM usage` qua `psutil.virtual_memory().percent` (`0.0` đến `100.0%`).
+-   Thu thập `Disk usage` qua `psutil.disk_usage` (xử lý an toàn `PermissionError` và phân vùng).
+-   Thu thập `Uptime` qua `psutil.boot_time()` và `/proc/uptime` (giây `>= 0.0`).
+-   Cung cấp các hàm `collect_metrics()` (chuẩn hóa payload telemetry) và `collect_system_info()` (chuẩn hóa Heartbeat payload theo Data Contract).
+-   Cung cấp lớp `SystemCollector` hướng đối tượng có khả năng cấu hình tham số đợt quét.
 
 ### Module 2 --- `agent/process_collector.py`
 
