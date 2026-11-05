@@ -506,32 +506,23 @@ Chức năng đã xây dựng:
 
 ### Module 2 --- `agent/process_collector.py`
 
-Thu thập:
+**Đã hoàn thành và có 13 unit tests vượt qua (`tests/test_process_collector.py`).**
 
--   PID.
--   PPID nếu lấy được.
--   Process name.
--   Username.
--   CPU percent.
--   Memory percent.
--   Executable path.
--   Process start time nếu lấy được.
+Chức năng đã xây dựng:
 
-Ví dụ dữ liệu:
-
-``` json
-{
-  "pid": 1234,
-  "name": "python3",
-  "username": "root",
-  "cpu_percent": 32.5,
-  "memory_percent": 1.2,
-  "exe": "/usr/bin/python3"
-}
-```
-
-Phải xử lý `NoSuchProcess`, `AccessDenied`, `ZombieProcess` và không để
-một process lỗi làm dừng toàn bộ collector.
+-   Thu thập `PID` (kiểm tra `pid >= 0`).
+-   Thu thập `PPID` (`ppid >= 0` hoặc `None`).
+-   Thu thập `Process name` (chuẩn hóa tên không rỗng, fallback sang tên file binary thực thi `exe` hoặc `proc-<pid>`).
+-   Thu thập `Username` sở hữu tiến trình.
+-   Thu thập `CPU percent` (`>= 0.0%`).
+-   Thu thập `Memory percent` (`0.0` đến `100.0%`).
+-   Thu thập `RSS bytes` (bộ nhớ thực tế tiêu thụ).
+-   Thu thập `Executable path` (`exe_path`).
+-   Thu thập `Process start time` (chuẩn hóa `create_time` sang ISO 8601 UTC).
+-   Bắt và xử lý an toàn các ngoại lệ `NoSuchProcess`, `AccessDenied`, `ZombieProcess` mà không làm crash collector.
+-   Hàm `collect_process_snapshot()` đóng gói dữ liệu snapshot đầy đủ envelope theo chuẩn Data Contract và có thể lưu trực tiếp vào cơ sở dữ liệu qua `ProcessRepository`.
+-   Hỗ trợ tra cứu tiến trình theo PID cụ thể qua `get_process_by_pid()`.
+-   Cung cấp lớp hướng đối tượng `ProcessCollector`.
 
 ### Module 3 --- `agent/file_integrity.py`
 
