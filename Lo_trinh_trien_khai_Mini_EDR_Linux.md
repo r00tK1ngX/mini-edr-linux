@@ -692,7 +692,7 @@ Chuyển telemetry và security events thành phát hiện có thể giải thí
 
 ## Phase 6 --- Alert và Incident Management
 
-**Trạng thái: Chưa triển khai.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu).**
 
 ### Vòng đời Alert
 
@@ -706,40 +706,46 @@ ACKNOWLEDGED
 RESOLVED
 ```
 
--   `NEW`: cảnh báo mới.
--   `ACKNOWLEDGED`: quản trị viên đã xác nhận.
--   `RESOLVED`: sự cố đã được xử lý.
+-   `NEW`: cảnh báo mới được kích hoạt từ Detection Engine.
+-   `ACKNOWLEDGED`: quản trị viên/SOC đã xác nhận sự cố, bắt đầu điều tra.
+-   `RESOLVED`: sự cố đã được xử lý (mitigated hoặc dismissed do false positive).
 
-### API dự kiến
+### API hoàn thiện
 
 ``` http
 GET  /api/v1/alerts
 GET  /api/v1/alerts/<id>
+GET  /api/v1/alerts/summary
+GET  /api/v1/alerts/stats
 POST /api/v1/alerts/<id>/acknowledge
 POST /api/v1/alerts/<id>/resolve
+POST /api/v1/alerts/<id>/dismiss
 ```
 
-### Dữ liệu cần lưu
+### Dữ liệu lưu trữ và quản lý
 
--   Alert ID.
--   Rule ID.
--   Endpoint liên quan.
--   Severity.
--   Title/description.
--   Evidence hoặc các event liên quan.
--   First seen / last seen.
--   Created time.
--   Acknowledged time.
--   Resolved time.
--   Resolution note.
+-   Alert ID (`id`).
+-   Unique key phục vụ gom cụm (`alert_key`).
+-   Mã luật phát hiện (`rule_id`).
+-   Endpoint liên quan (`agent_id`).
+-   Mức độ nghiêm trọng (`severity`: info, low, medium, high, critical).
+-   Tiêu đề và mô tả sự cố (`title`, `description`).
+-   Liên kết sự kiện bảo mật nguồn (`alert_events` liên kết sang `security_events`).
+-   Thời điểm phát hiện: `first_seen_at`, `last_seen_at`.
+-   Thời điểm quản lý: `created_at`, `updated_at`, `acknowledged_at`, `resolved_at`.
+-   Ghi chú xử lý sự cố (`resolution_note`).
 
-### Điều kiện hoàn thành Phase 6
+### Tiêu chí nghiệm thu đã đạt
 
--   Detection tạo được Alert.
--   Alert hiển thị qua API.
--   Có thể acknowledge và resolve.
--   Thời điểm xử lý được lưu.
--   Có test cho trạng thái hợp lệ và chuyển trạng thái không hợp lệ.
+-   [x] Detection Engine tạo và liên kết Alert tự động trong thời gian thực.
+-   [x] API liệt kê và lọc linh hoạt theo `status`, `severity`, `agent_id`, `rule_id`, phân trang chuẩn với `limit` và `offset`.
+-   [x] API chi tiết cảnh báo `GET /api/v1/alerts/<id>` hiển thị đầy đủ danh sách security events liên kết.
+-   [x] API thống kê `GET /api/v1/alerts/summary` và alias `/stats` tổng hợp số lượng alert theo status và severity (hỗ trợ lọc theo agent).
+-   [x] Thực hiện xác nhận (`POST /acknowledge`), đóng sự cố (`POST /resolve`), và bỏ qua cảnh báo (`POST /dismiss`).
+-   [x] Lưu chính xác thời điểm xử lý `acknowledged_at`, `resolved_at` cùng `resolution_note`.
+-   [x] State transition guard: chặn chuyển từ `resolved` về `acknowledged` với HTTP 400.
+-   [x] Idempotency: gọi lại acknowledge, resolve hoặc dismiss trên cảnh báo đã ở trạng thái đích đều trả về HTTP 200 mà không ghi đè timestamp lịch sử.
+-   [x] Toàn bộ 36 test cases trong `tests/test_alert_management.py` và 182 test cases toàn hệ thống đều PASS 100%.
 
 ------------------------------------------------------------------------
 

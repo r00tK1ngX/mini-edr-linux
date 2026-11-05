@@ -132,11 +132,12 @@ class AlertRepository(BaseRepository):
         status: Optional[str] = None,
         severity: Optional[str] = None,
         agent_id: Optional[str] = None,
+        rule_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
         connection: Optional[sqlite3.Connection] = None,
     ) -> List[Dict[str, Any]]:
-        """List alerts with optional status, severity, agent filters, limit, and offset."""
+        """List alerts with optional status, severity, agent, rule filters, limit, and offset."""
         conditions = []
         params = []
         if status:
@@ -148,6 +149,9 @@ class AlertRepository(BaseRepository):
         if agent_id:
             conditions.append("agent_id = ?")
             params.append(agent_id)
+        if rule_id:
+            conditions.append("rule_id = ?")
+            params.append(rule_id)
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         sql = f"""
@@ -208,6 +212,55 @@ class AlertRepository(BaseRepository):
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def dismiss(
+        self,
+        alert_id: int,
+        dismissed_at: Optional[str] = None,
+        note: Optional[str] = None,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Dismiss an alert by marking it resolved with a dismissal / false positive note."""
+        dismiss_note = note or "Dismissed by operator (false positive / ignored)"
+        return self.resolve(alert_id, resolved_at=dismissed_at, note=dismiss_note, connection=connection)
+
+    def get_summary(
+        self,
+        agent_id: Optional[str] = None,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> Dict[str, Any]:
+        """Aggregate alert statistics grouped by status and severity."""
+        with self._connection(connection) as conn:
+            status_params = [agent_id] if agent_id else []
+            agent_filter = "WHERE agent_id = ?" if agent_id else ""
+
+            status_rows = conn.execute(
+                f"SELECT status, COUNT(*) as cnt FROM alerts {agent_filter} GROUP BY status",
+                tuple(status_params),
+            ).fetchall()
+            by_status = {r["status"]: r["cnt"] for r in status_rows}
+            for s in ("new", "acknowledged", "resolved"):
+                by_status.setdefault(s, 0)
+
+            sev_rows = conn.execute(
+                f"SELECT severity, COUNT(*) as cnt FROM alerts {agent_filter} GROUP BY severity",
+                tuple(status_params),
+            ).fetchall()
+            by_severity = {r["severity"]: r["cnt"] for r in sev_rows}
+            for sev in ("info", "low", "medium", "high", "critical"):
+                by_severity.setdefault(sev, 0)
+
+            total = sum(by_status.values())
+            open_count = by_status["new"] + by_status["acknowledged"]
+
+            return {
+                "total_alerts": total,
+                "open_alerts": open_count,
+                "resolved_alerts": by_status["resolved"],
+                "critical_and_high_alerts": by_severity["critical"] + by_severity["high"],
+                "by_status": by_status,
+                "by_severity": by_severity,
+            }
+
     def link_events(
         self,
         alert_id: int,
@@ -250,9 +303,10 @@ class AlertRepository(BaseRepository):
         status: Optional[str] = None,
         severity: Optional[str] = None,
         agent_id: Optional[str] = None,
+        rule_id: Optional[str] = None,
         connection: Optional[sqlite3.Connection] = None,
     ) -> int:
-        """Count alerts based on status, severity, or agent filters."""
+        """Count alerts based on status, severity, agent, or rule filters."""
         conditions = []
         params = []
         if status:
@@ -264,6 +318,9 @@ class AlertRepository(BaseRepository):
         if agent_id:
             conditions.append("agent_id = ?")
             params.append(agent_id)
+        if rule_id:
+            conditions.append("rule_id = ?")
+            params.append(rule_id)
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         sql = f"SELECT COUNT(*) FROM alerts {where_clause}"
