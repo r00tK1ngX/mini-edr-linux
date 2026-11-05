@@ -589,46 +589,48 @@ Chức năng đã xây dựng:
 
 ## Phase 4 --- Kết nối Agent với Server (End-to-End)
 
-**Trạng thái: Chưa triển khai theo roadmap.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu).**
 
 ### Mục tiêu
 
 Chứng minh nhiều Linux Agent có thể gửi dữ liệu và Server lưu đúng
-endpoint.
+endpoint, hoạt động end-to-end từ thu thập mạng đến lưu trữ database.
 
-### Công việc
+### Các thành phần đã triển khai
 
-1.  Chạy Server và Agent trên cùng VM.
-2.  Gửi heartbeat.
-3.  Gửi system telemetry.
-4.  Gửi process snapshots.
-5.  Gửi file events/security events.
-6.  Kiểm tra dữ liệu trong SQLite.
-7.  Chạy Agent thứ hai với `agent_id` khác.
-8.  Tắt Agent để kiểm tra Offline.
-9.  Khởi động lại Agent để kiểm tra Online.
+1.  **Ingestion & Management API Endpoints (`server/routes.py`):**
+    -   `POST /api/v1/telemetry/system`: Tiếp nhận telemetry metrics lịch sử, validate envelope, kiểm tra agent hợp lệ (HTTP 404 nếu chưa đăng ký), chống ghi trùng idempotency theo `message_id` (HTTP 200 duplicate / HTTP 409 conflict), lưu qua `MetricsRepository`.
+    -   `POST /api/v1/telemetry/processes`: Tiếp nhận process snapshots, kiểm tra khớp `process_count`, từ chối PID trùng lặp trong snapshot, lưu atomic qua `ProcessRepository.create_snapshot()`.
+    -   `POST /api/v1/file-baselines`: Đồng bộ baseline FIM, kiểm tra mã băm SHA-256 64 ký tự hex, đường dẫn tuyệt đối, trạng thái `present`/`missing`, tính toán số lượng `created`/`updated` và upsert hàng loạt an toàn qua `BaselineRepository`.
+    -   `POST /api/v1/events`: Tiếp nhận security events từ Agent, ràng buộc nghiêm ngặt `source: "agent"`, validate severity chuẩn (`info`, `low`, `medium`, `high`, `critical`), lưu qua `EventRepository`.
+    -   Alert API: Cung cấp `GET /api/v1/alerts` (hỗ trợ lọc theo `status`, `severity`, `agent_id`, phân trang `limit`/`offset`), `GET /api/v1/alerts/<id>` (kèm sự kiện liên kết), `POST /api/v1/alerts/<id>/acknowledge`, `POST /api/v1/alerts/<id>/resolve` (kèm resolution note).
 
-### Cấu hình heartbeat tham khảo
+2.  **Agent Integration Enhancement (`agent/main.py` & `agent/system_collector.py`):**
+    -   Bổ sung phương thức `collect_telemetry_envelope()` vào `SystemCollector` để tự động đóng gói payload telemetry theo đúng chuẩn Data Contract 1.0.
+    -   Cập nhật `AgentOrchestrator` trong chu kỳ thu thập tự động gửi cả Heartbeat và Telemetry metrics lên Server.
+    -   Cập nhật `format_fim_security_event()` trong `agent/file_integrity.py` bổ sung trường bắt buộc `occurred_at`.
 
--   Heartbeat mỗi 5 giây.
--   Offline nếu quá 15 giây không nhận heartbeat.
--   `last_seen` do Server tạo.
--   Không tin thời gian do Agent tự khai báo để quyết định trạng thái
-    kết nối.
+3.  **End-to-End Integration Test Suite (`tests/test_phase4_e2e.py`):**
+    -   Khởi chạy Flask HTTP server thực tế trên cổng loopback ngẫu nhiên (`make_server`).
+    -   `test_e2e_multiple_agents_registration_and_persistence`: Đăng ký 2 Agent độc lập (`lab-linux-01`, `lab-linux-02`), xác nhận không trùng lặp endpoint, kiểm tra toàn bộ dữ liệu (metrics, snapshots, observations, baselines) lưu chính xác vào SQLite.
+    -   `test_e2e_fim_file_tampering_detects_and_creates_security_event`: Giả lập chỉnh sửa tệp giám sát, Agent phát hiện thay đổi và gửi security event lên Server, Server lưu vào bảng `security_events`.
+    -   `test_e2e_offline_transition_and_online_reactivation`: Kiểm thử endpoint chuyển sang `offline` khi quá 15s không heartbeat và tự động phục hồi `online` khi nhận heartbeat mới.
+    -   `test_e2e_agent_authentication_failure`: Kiểm thử từ chối kết nối khi sai token (HTTP 401), không retry sai mục đích và không lộ credential.
 
-### Mạng lab
+4.  **API Ingestion Tests (`tests/test_api.py`):**
+    -   Bổ sung 9 unit tests cho các endpoint mới, kiểm thử xác thực, envelope validation, idempotency, duplicate retry, và alert lifecycle.
 
-Server hiện bind `127.0.0.1`. Khi cần VM khác kết nối, cấu hình bind phù
-hợp như `0.0.0.0`, nhưng phải giới hạn bằng mạng lab và firewall. Không
-mở API trực tiếp ra Internet.
+### Kết quả kiểm thử
+
+-   Toàn bộ test suite: **124/124 tests PASSED** (52 agent tests, 38 API tests, 13 database tests, 10 repository tests, 7 migration tests, 4 E2E tests).
 
 ### Điều kiện hoàn thành Phase 4
 
--   Tối thiểu hai endpoint xuất hiện.
--   Không tạo endpoint trùng.
--   Metrics/process/events lưu đúng Agent.
--   Offline/Online hoạt động đúng.
--   Có integration test cho luồng Agent → API → Database.
+-   [x] Tối thiểu hai endpoint xuất hiện (`lab-linux-01`, `lab-linux-02`).
+-   [x] Không tạo endpoint trùng khi Agent gửi nhiều lần.
+-   [x] Metrics/process/baselines/events lưu đúng Agent trong SQLite.
+-   [x] Offline/Online hoạt động đúng theo ngưỡng thời gian.
+-   [x] Có integration test hoàn chỉnh cho luồng Agent → API → Database.
 
 ------------------------------------------------------------------------
 

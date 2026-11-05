@@ -292,17 +292,20 @@ def format_fim_security_event(
 
     fingerprint = f"fim:{change_type}:{file_path}:{curr.get('sha256', '')}"
 
+    detected_at = change_event.get("detected_at", _utc_now())
+
     return {
         "schema_version": "1.0",
         "message_id": message_id or str(uuid.uuid4()),
         "agent_id": agent_id,
-        "collected_at": change_event.get("detected_at", _utc_now()),
+        "collected_at": detected_at,
         "payload": {
             "event_type": f"fim_file_{change_type}",
             "severity": severity,
             "source": "agent",
             "title": title,
             "description": f"File {file_path} underwent {change_type} event",
+            "occurred_at": detected_at,
             "fingerprint": fingerprint,
             "evidence": evidence,
         },

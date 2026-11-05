@@ -5,12 +5,14 @@ metrics (CPU %, RAM %, Disk %, Uptime) using standard Linux interfaces and psuti
 Handles exceptions gracefully to prevent agent crashes.
 """
 
+from datetime import datetime, timezone
 import logging
+from pathlib import Path
 import platform
 import socket
 import time
-from pathlib import Path
 from typing import Any, Dict, Optional
+import uuid
 
 import psutil
 
@@ -276,3 +278,13 @@ class SystemCollector:
             disk_path=self.disk_path,
             cpu_interval=self.cpu_interval,
         )
+
+    def collect_telemetry_envelope(self) -> Dict[str, Any]:
+        """Wrap system metrics in standard Phase 2 Message Envelope."""
+        return {
+            "schema_version": "1.0",
+            "message_id": str(uuid.uuid4()),
+            "agent_id": self.agent_id,
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+            "payload": self.collect_metrics(),
+        }
