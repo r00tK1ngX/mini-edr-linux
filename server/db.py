@@ -10,8 +10,8 @@ SQLITE_TIMEOUT_SECONDS = 5.0
 def get_connection(database_path=None):
     """Open a configured SQLite connection.
 
-    The caller owns the returned connection and must close it. WAL improves
-    reader/writer coexistence for the dashboard and periodic Agent updates.
+    The caller owns the returned connection and must close it. WAL is enabled
+    once by init_db(); each connection applies its own safety pragmas.
     """
     path = Path(database_path) if database_path else DEFAULT_DATABASE_PATH
     if str(path) != ":memory:":
@@ -24,7 +24,6 @@ def get_connection(database_path=None):
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")
-    connection.execute("PRAGMA journal_mode = WAL")
     return connection
 
 
@@ -32,6 +31,7 @@ def init_db(database_path=None):
     """Create the Phase 1 endpoint table if it does not already exist."""
     with closing(get_connection(database_path)) as connection:
         with connection:
+            connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS endpoints (
                     agent_id TEXT PRIMARY KEY,
