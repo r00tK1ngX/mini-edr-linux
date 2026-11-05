@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+from server.migrations import apply_migrations
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "mini_edr.db"
@@ -27,11 +28,35 @@ def get_connection(database_path=None):
     return connection
 
 
+
 def init_db(database_path=None):
-    """Create the Phase 1 endpoint table if it does not already exist."""
+    """
+    Initialize the legacy Phase 1 schema and apply all pending
+    versioned database migrations.
+
+    Phase 1's endpoints table is preserved.
+    Phase 2 schema is managed by Migration Runner.
+    """
+
+    database_path = (
+        str(database_path)
+        if database_path is not None
+        else str(DEFAULT_DATABASE_PATH)
+    )
+
+    if database_path == ":memory:":
+        raise ValueError(
+            "File-backed SQLite database is required "
+            "because migrations use separate connections."
+        )
+
+    # Step 1: Initialize the Phase 1 schema.
     with closing(get_connection(database_path)) as connection:
+
+        # WAL must be configured outside an active transaction.
+        connection.execute("PRAGMA journal_mode = WAL")
+
         with connection:
-            connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS endpoints (
                     agent_id TEXT PRIMARY KEY,
@@ -48,10 +73,17 @@ def init_db(database_path=None):
                     last_seen TEXT NOT NULL
                 )
             """)
+
             connection.execute("""
                 CREATE INDEX IF NOT EXISTS idx_endpoints_last_seen
                 ON endpoints(last_seen)
             """)
+
+    # Step 2: Apply Phase 2 and subsequent migrations.
+    # This happens only after the endpoints table is available.
+    applied = apply_migrations(database_path)
+
+    return applied
 
 
 def upsert_endpoint(endpoint, database_path=None):
