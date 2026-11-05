@@ -978,38 +978,35 @@ Toàn bộ **214/214 test cases** (Unit, Integration, E2E, Security & Reliabilit
 
 ## Phase 10 --- Hoàn thiện sản phẩm, Slide và Demo
 
+**Trạng thái: Đã hoàn thành 100% (Hoàn tất toàn bộ mục tiêu đề tài từ Phase 1 đến Phase 10).**
+
 ### Tiêu chí sản phẩm cuối
 
--   [ ] Repository chạy được trên Linux.
--   [ ] Agent thu thập system telemetry.
--   [ ] Agent thu thập process information.
--   [ ] FIM phát hiện file create/modify/delete.
--   [ ] Server nhận và lưu dữ liệu.
--   [ ] SQLite quản lý nhiều endpoint.
--   [ ] Detection Engine phát hiện dấu hiệu đáng ngờ.
--   [ ] Alert có evidence và severity.
--   [ ] Dashboard hiển thị dữ liệu thật.
--   [ ] Alert có thể acknowledge/resolve.
--   [ ] Unit và integration tests vượt qua.
--   [ ] README và tài liệu kỹ thuật đầy đủ.
--   [ ] Slide hoàn chỉnh.
--   [ ] Demo trực tiếp và video dự phòng.
+-   [x] Repository chạy được trên Linux (Ubuntu, Debian, Kali Linux).
+-   [x] Agent thu thập system telemetry (CPU%, RAM%, Disk%, Uptime).
+-   [x] Agent thu thập process information (PID, PPID, User, Exe, Cmdline, RSS).
+-   [x] FIM phát hiện file create/modify/delete sử dụng mã băm SHA-256.
+-   [x] Server nhận và lưu dữ liệu theo chuẩn Common Telemetry Envelope 1.0.
+-   [x] SQLite quản lý nhiều endpoint (trạng thái Online/Offline theo chu kỳ heartbeat).
+-   [x] Detection Engine phát hiện dấu hiệu đáng ngờ (Reverse shell, Hack tools, Shell spawn, FIM tampering).
+-   [x] Alert có evidence JSON, fingerprint và mức độ nghiêm trọng (Severity).
+-   [x] Dashboard hiển thị 100% dữ liệu thật từ database với phong cách Cyberpunk Hacker.
+-   [x] Alert có thể acknowledge/resolve/dismiss trực tiếp qua AJAX với State Transition Guards.
+-   [x] Unit, Integration, E2E và Security tests vượt qua: **214/214 tests PASS 100%**.
+-   [x] README và tài liệu kỹ thuật đầy đủ (`docs/ARCHITECTURE.md`, `docs/DATA_CONTRACT.md`, `docs/API_SPECIFICATION.md`, `docs/TEST_PLAN.md`).
+-   [x] Slide hoàn chỉnh: Cấu trúc 18 slide chi tiết kèm lời thoại thuyết minh và bộ câu hỏi phản biện (`docs/PRESENTATION_SLIDES_OUTLINE.md`).
+-   [x] Demo trực tiếp và kịch bản dự phòng: Script tự động hóa kịch bản tấn công (`scripts/simulate_attack_scenario.py`) và hướng dẫn demo 5--7 phút (`docs/DEMO_SCENARIO.md`).
 
-### Kịch bản demo 5--7 phút
+### Kịch bản demo 5--7 phút (Đã đóng gói hoàn chỉnh)
 
-1.  Giới thiệu bài toán và kiến trúc Mini EDR.
-2.  Khởi động Flask Server.
-3.  Khởi động Agent trên Linux.
-4.  Cho thấy endpoint xuất hiện trên Dashboard.
-5.  Tạo file mới trong thư mục được giám sát.
-6.  Chỉnh sửa hoặc xóa file để FIM phát hiện.
-7.  Kích hoạt một tình huống process đáng ngờ an toàn trong lab.
-8.  Quan sát Security Event/Alert và evidence.
-9.  Acknowledge Alert trên Dashboard.
-10. Kết thúc bằng kết quả kiểm thử và giới hạn của hệ thống.
-
-Chuẩn bị video demo dự phòng để tránh sự cố mạng, VM hoặc môi trường
-trong buổi báo cáo.
+1.  Giới thiệu bài toán và kiến trúc Mini EDR trên giao diện Cyberpunk SOC Command Center (`/dashboard`).
+2.  Khởi động Flask Server và nạp dữ liệu nền sinh động (`scripts/seed_demo_data.py`).
+3.  Khởi động Agent trên Linux, hiển thị endpoint liveness và kiểm tra tiến trình qua Modal Inspect (`/endpoints`).
+4.  Kích hoạt kịch bản tấn công FIM: Sửa đổi tệp cấu hình, Agent phát hiện mã băm SHA-256 thay đổi và kích hoạt Alert `HIGH`.
+5.  Kích hoạt kịch bản tiến trình độc hại: Chạy `/tmp/nc -lvnp 4444`, Detection Engine tính Risk Score $= 90$ và tạo Alert `CRITICAL`.
+6.  SOC Triage Console: Xem bằng chứng Evidence JSON, thực thi Acknowledge và Resolve với ghi chú xử lý trên giao diện.
+7.  Minh chứng độ tin cậy và an toàn: Chạy toàn bộ 214 test cases và xác minh toàn vẹn cơ sở dữ liệu (`PRAGMA integrity_check`).
+8.  Chuẩn bị sẵn video demo dự phòng 1080p theo hướng dẫn trong `docs/DEMO_SCENARIO.md`.
 
 ------------------------------------------------------------------------
 
@@ -1019,55 +1016,34 @@ trong buổi báo cáo.
 contract còn thay đổi.
 
 ``` text
-[ĐÃ HOÀN THÀNH]
-Phase 1: Backend Foundation
+[100% HOÀN THÀNH] Phase 1: Backend Foundation & API Gateway
         |
         v
-[ĐÃ KIỂM THỬ LOCAL]
-Phase 2.1: Migration Framework
+[100% HOÀN THÀNH] Phase 2: Database Schema & Repositories DAL
         |
         v
-[TIẾP THEO]
-Phase 2.2: Database Schema
+[100% HOÀN THÀNH] Phase 3: Linux Agent (Collectors, FIM, Orchestrator)
         |
         v
-Phase 2.3: Data Access Layer
+[100% HOÀN THÀNH] Phase 4: End-to-End Agent-Server Ingestion
         |
         v
-Phase 2.4: Data Contract
+[100% HOÀN THÀNH] Phase 5: Detection Engine & Correlation Rules
         |
         v
-Phase 2.5: API Specification
+[100% HOÀN THÀNH] Phase 6: Alert & Incident Management Lifecycle
         |
         v
-Phase 2.6: Database Tests
+[100% HOÀN THÀNH] Phase 7: Cyberpunk Hacker SOC Web Dashboard
         |
         v
-Phase 2.7: ERD & Documentation
+[100% HOÀN THÀNH] Phase 8: Full Testing & Security Hardening (214/214 Tests)
         |
         v
-Phase 3: Linux Agent
+[100% HOÀN THÀNH] Phase 9: Documentation, ERD & Architecture Finalization
         |
         v
-Phase 4: End-to-End Integration
-        |
-        v
-Phase 5: Detection Engine
-        |
-        v
-Phase 6: Alert Management
-        |
-        v
-Phase 7: Web Dashboard
-        |
-        v
-Phase 8: Full Testing & Security
-        |
-        v
-Phase 9: Documentation Finalization
-        |
-        v
-Phase 10: Slides & Demo
+[100% HOÀN THÀNH] Phase 10: Slides Master Outline & Live Demo Scenario
 ```
 
 Có thể thực hiện một số test và tài liệu song song, nhưng không nên bỏ
