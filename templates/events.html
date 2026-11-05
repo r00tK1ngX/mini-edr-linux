@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}AUDIT LOGS // MINI-EDR SECURITY EVENT STREAM{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+  <div>
+    <div class="header-meta">
+      <span>TELEMETRY STREAM</span>
+      <span>•</span>
+      <span>TOTAL LOGGED EVENTS: {{ total_events }}</span>
+    </div>
+    <h1 class="page-title">SECURITY <span>AUDIT LOG</span></h1>
+  </div>
+  <div class="header-actions">
+    <button type="button" class="btn btn-outline btn-sm" onclick="location.reload()">
+      <span>🔄</span> SYNC EVENTS
+    </button>
+  </div>
+</div>
+
+<!-- Toolbar: Filter by Severity & Event Type -->
+<form method="GET" action="{{ url_for('web.events') }}" class="toolbar">
+  <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: 0.4rem;">
+      <span class="filter-label">SEVERITY:</span>
+      <select name="severity" class="cyber-select" onchange="this.form.submit()">
+        <option value="all" {% if severity_filter == 'all' %}selected{% endif %}>ALL SEVERITIES</option>
+        <option value="critical" {% if severity_filter == 'critical' %}selected{% endif %}>CRITICAL</option>
+        <option value="high" {% if severity_filter == 'high' %}selected{% endif %}>HIGH</option>
+        <option value="medium" {% if severity_filter == 'medium' %}selected{% endif %}>MEDIUM</option>
+        <option value="low" {% if severity_filter == 'low' %}selected{% endif %}>LOW</option>
+        <option value="info" {% if severity_filter == 'info' %}selected{% endif %}>INFO</option>
+      </select>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.4rem;">
+      <span class="filter-label">EVENT TYPE:</span>
+      <select name="event_type" class="cyber-select" onchange="this.form.submit()">
+        <option value="all" {% if event_type_filter == 'all' %}selected{% endif %}>ALL EVENT TYPES</option>
+        <option value="suspicious_process_spawn" {% if event_type_filter == 'suspicious_process_spawn' %}selected{% endif %}>suspicious_process_spawn</option>
+        <option value="fim_sensitive_file" {% if event_type_filter == 'fim_sensitive_file' %}selected{% endif %}>fim_sensitive_file</option>
+        <option value="fim_file_modified" {% if event_type_filter == 'fim_file_modified' %}selected{% endif %}>fim_file_modified</option>
+        <option value="fim_file_created" {% if event_type_filter == 'fim_file_created' %}selected{% endif %}>fim_file_created</option>
+        <option value="fim_file_deleted" {% if event_type_filter == 'fim_file_deleted' %}selected{% endif %}>fim_file_deleted</option>
+      </select>
+    </div>
+
+    {% if severity_filter != 'all' or event_type_filter != 'all' %}
+      <a href="{{ url_for('web.events') }}" class="btn btn-outline btn-sm">RESET FILTERS</a>
+    {% endif %}
+  </div>
+</form>
+
+<!-- Security Events Table Card -->
+<div class="cyber-card">
+  <div class="card-header">
+    <div class="card-title">
+      <div class="dot" style="background: var(--neon-purple); box-shadow: 0 0 6px var(--neon-purple);"></div>
+      INGESTED SECURITY & INTEGRITY EVENTS ({{ events|length }})
+    </div>
+    <span style="color: var(--text-muted); font-size: 0.75rem;">SHOWING LATEST 100 EVENTS</span>
+  </div>
+  <div class="table-responsive">
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>EVENT TYPE</th>
+          <th>SEVERITY</th>
+          <th>TITLE</th>
+          <th>SOURCE</th>
+          <th>ENDPOINT</th>
+          <th>OCCURRED AT</th>
+          <th>EVIDENCE</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if events %}
+          {% for ev in events %}
+            <tr>
+              <td><span class="cyber-code">#{{ ev.id }}</span></td>
+              <td><span style="color: var(--neon-purple); font-weight: 700;">{{ ev.event_type }}</span></td>
+              <td><span class="badge badge-{{ ev.severity }}">{{ ev.severity|upper }}</span></td>
+              <td style="font-weight: 600; color: #fff;">{{ ev.title }}</td>
+              <td><span class="badge badge-info" style="font-size: 0.65rem;">{{ ev.source|upper }}</span></td>
+              <td><span class="cyber-code">{{ ev.agent_id }}</span></td>
+              <td style="font-size: 0.72rem; color: var(--text-muted); white-space: nowrap;">{{ ev.occurred_at|format_dt }}</td>
+              <td>
+                <details style="cursor: pointer;">
+                  <summary class="btn btn-outline btn-sm" style="display: inline-flex; font-size: 0.7rem; padding: 0.2rem 0.5rem;">
+                    VIEW JSON
+                  </summary>
+                  <pre class="json-viewer" style="margin-top: 0.5rem; max-width: 400px;">{{ ev.evidence_json|pretty_json }}</pre>
+                </details>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+              [NO SECURITY EVENTS MATCHING FILTERS]
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

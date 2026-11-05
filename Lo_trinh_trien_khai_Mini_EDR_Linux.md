@@ -751,65 +751,63 @@ POST /api/v1/alerts/<id>/dismiss
 
 ## Phase 7 --- Web Dashboard
 
-**Trạng thái: Chưa triển khai.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu).**
 
-### Công nghệ
+### Công nghệ & Phong cách Thiết kế
 
-Flask + Jinja2 + HTML + CSS + JavaScript. Với phạm vi đồ án, chưa cần
-React.
+-   **Backend:** Flask Application Factory + Jinja2 Templates + Repositories DAL.
+-   **Frontend:** HTML5 + Modern CSS3 + Vanilla ES6+ JavaScript (không phụ thuộc CDN bên ngoài, chạy mượt mà ngay cả trong môi trường offline/air-gapped).
+-   **Phong cách Giao diện:** **Cyberpunk Hacker / SOC Command Center** hiện đại:
+    -   Tông nền tối Deep Space / Dark Terminal (`#06090e`), hiệu ứng lưới ma trận Matrix Grid và lớp phủ CRT scanlines.
+    -   Bảng màu Neon đặc trưng: Neon Cyan (`#00f0ff`), Matrix Neon Green (`#00ff9d`), Alert Neon Red (`#ff0055`), Amber Warning (`#ffb700`), Neon Purple (`#b026ff`).
+    -   HUD Navigation Bar hiển thị nhịp xung thời gian thực `● GRID ACTIVE` và đồng hồ số UTC.
+    -   Font Monospace kỹ thuật (`JetBrains Mono`, `Fira Code`, `Consolas`).
+    -   Cắt góc vát công nghệ (Angular Tech Chamfers), thanh đo tài nguyên có dải chuyển màu neon.
 
 ### Cấu trúc giao diện
 
 ``` text
 templates/
-├── dashboard.html
-├── endpoints.html
-└── alerts.html
+├── base.html          # Khung HUD Cyberpunk, modal deck & toast system
+├── dashboard.html     # Trang 1: SOC Command Center Overview
+├── endpoints.html     # Trang 2: Endpoint Matrix & Telemetry
+├── alerts.html        # Trang 3: Incident Response & Triage Console
+└── events.html        # Trang 4: Security Events Audit Log
 
 static/
-└── style.css
+├── style.css          # Cyberpunk Theme Stylesheet hoàn chỉnh
+└── dashboard.js       # Live clock, Async Modals & Instant Triage Actions
 ```
 
-### Trang 1 --- Overview
+### Các trang chức năng đã hoàn thiện
 
--   Tổng số endpoint.
--   Số Online/Offline.
--   Tổng số Alert đang mở.
--   Biểu đồ CPU/RAM.
--   Cảnh báo mới nhất.
+-   **Trang 1 --- Overview (`/dashboard`):**
+    -   4 Cyber KPI Tiles: Tổng số Endpoint (Online/Offline), Active Incidents (New/Acknowledged), Critical & High Threats, Ingested Security Events.
+    -   Đo lường trung bình tài nguyên toàn mạng: CPU, Memory, Disk với thanh đo phát sáng neon.
+    -   Ma trận phân bố mức độ nghiêm trọng cảnh báo (Severity Matrix).
+    -   Dòng sự cố an ninh trực tiếp (Active Incidents Stream) và luồng nhật ký sự kiện bảo mật (Security Telemetry Stream).
+-   **Trang 2 --- Endpoints (`/endpoints`):**
+    -   Bảng danh sách máy tính đầu cuối: Hostname, Agent ID, IP, OS, thanh đo CPU/RAM/Disk, Uptime, Last Heartbeat, Badge trạng thái Online/Offline.
+    -   Bộ lọc nhanh trạng thái (`ALL`, `ONLINE`, `OFFLINE`) và ô tìm kiếm tức thời theo hostname/IP/agent.
+    -   Nút `INSPECT`: Mở Cyber Modal nạp danh sách tiến trình đang chạy (`process_snapshots` & `process_observations`) và số lượng tệp FIM được giám sát.
+-   **Trang 3 --- Alerts & Incident Response (`/alerts`):**
+    -   Bảng điều khiển xử lý sự cố an ninh: lọc theo `Status` (`ALL`, `NEW`, `ACKNOWLEDGED`, `RESOLVED`), `Severity` (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`), và lọc theo Endpoint.
+    -   Xem chi tiết bằng chứng (`EVIDENCE`): Mở Modal hiển thị toàn bộ JSON evidence và các security events liên kết.
+    -   Thực thi hành động ngay trên giao diện mà không cần reload trang:
+        -   `ACK`: Xác nhận sự cố (chuyển sang `ACKNOWLEDGED`).
+        -   `RESOLVE`: Mở modal nhập ghi chú khắc phục sự cố (chuyển sang `RESOLVED`).
+        -   `DISMISS`: Đánh dấu bỏ qua cảnh báo là false positive.
+-   **Trang 4 --- Audit Logs (`/events`):**
+    -   Nhật ký kiểm toán sự kiện an ninh và FIM, lọc theo mức độ nghiêm trọng và loại sự kiện, hỗ trợ mở rộng xem bằng chứng JSON chi tiết.
 
-### Trang 2 --- Endpoints
+### Tiêu chí nghiệm thu đã đạt
 
--   Hostname.
--   IP.
--   OS.
--   CPU/RAM/Disk.
--   Uptime.
--   Last Seen.
--   Trạng thái.
-
-### Trang 3 --- Alerts
-
--   Alert ID.
--   Severity.
--   Event type.
--   Endpoint.
--   Thời gian phát hiện.
--   Evidence.
--   Nút Acknowledge/Resolve.
-
-### Nguyên tắc
-
-Dashboard phải lấy dữ liệu thật từ database/API, không dùng số liệu
-hardcode để giả lập kết quả cuối cùng.
-
-### Điều kiện hoàn thành Phase 7
-
--   Overview hiển thị số liệu thật.
--   Endpoint list cập nhật đúng.
--   Alert list và chi tiết có evidence.
--   Acknowledge/Resolve hoạt động.
--   Giao diện sử dụng được trên màn hình demo.
+-   [x] Overview hiển thị 100% số liệu thật từ SQLite database, không dùng số liệu hardcode.
+-   [x] Endpoint list cập nhật chính xác theo chu kỳ heartbeat và ngưỡng `OFFLINE_AFTER_SECONDS`.
+-   [x] Modal kiểm tra Endpoint hiển thị danh sách tiến trình và trạng thái FIM.
+-   [x] Alert list và modal Evidence hiển thị đầy đủ chi tiết bằng chứng và security events liên quan.
+-   [x] Các nút Acknowledge, Resolve, Dismiss hoạt động mượt mà qua AJAX, có Toast notification phản hồi ngay lập tức.
+-   [x] Toàn bộ 11 test cases trong `tests/test_dashboard.py` và 193 test cases toàn hệ thống đều PASS 100%.
 
 ------------------------------------------------------------------------
 

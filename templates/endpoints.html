@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}ENDPOINTS // MINI-EDR ASSET MANAGEMENT{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+  <div>
+    <div class="header-meta">
+      <span>FLEET INVENTORY</span>
+      <span>•</span>
+      <span>TOTAL ASSETS: {{ total_count }}</span>
+    </div>
+    <h1 class="page-title">ENDPOINT <span>MATRIX</span></h1>
+  </div>
+  <div class="header-actions">
+    <button type="button" class="btn btn-outline btn-sm" onclick="location.reload()">
+      <span>🔄</span> REFRESH MATRIX
+    </button>
+  </div>
+</div>
+
+<!-- Toolbar: Filter by Status & Search -->
+<div class="toolbar">
+  <!-- Status Filter Chips -->
+  <div class="filter-group">
+    <span class="filter-label">STATUS:</span>
+    <a href="{{ url_for('web.endpoints', status='all', q=search_query) }}" class="filter-chip {% if status_filter == 'all' %}active{% endif %}">
+      ALL ({{ total_count }})
+    </a>
+    <a href="{{ url_for('web.endpoints', status='online', q=search_query) }}" class="filter-chip {% if status_filter == 'online' %}active{% endif %}" style="border-color: rgba(0, 255, 157, 0.4);">
+      <span style="color: var(--neon-green);">●</span> ONLINE ({{ online_count }})
+    </a>
+    <a href="{{ url_for('web.endpoints', status='offline', q=search_query) }}" class="filter-chip {% if status_filter == 'offline' %}active{% endif %}" style="border-color: rgba(255, 0, 85, 0.4);">
+      <span style="color: var(--neon-red);">●</span> OFFLINE ({{ offline_count }})
+    </a>
+  </div>
+
+  <!-- Search Form -->
+  <form method="GET" action="{{ url_for('web.endpoints') }}" style="display: flex; gap: 0.5rem;">
+    {% if status_filter != 'all' %}
+      <input type="hidden" name="status" value="{{ status_filter }}">
+    {% endif %}
+    <input type="text" name="q" value="{{ search_query }}" class="cyber-input" placeholder="Search hostname, IP, agent..." style="width: 260px;">
+    <button type="submit" class="btn btn-cyan btn-sm">FIND</button>
+    {% if search_query %}
+      <a href="{{ url_for('web.endpoints', status=status_filter) }}" class="btn btn-outline btn-sm">CLEAR</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Endpoints Table Card -->
+<div class="cyber-card">
+  <div class="card-header">
+    <div class="card-title">
+      <div class="dot"></div>
+      ACTIVE MONITORED NODES
+    </div>
+    <span style="color: var(--text-muted); font-size: 0.75rem;">SHOWING {{ endpoints|length }} ENDPOINTS</span>
+  </div>
+  <div class="table-responsive">
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>STATUS</th>
+          <th>HOSTNAME</th>
+          <th>AGENT ID</th>
+          <th>IP ADDRESS</th>
+          <th>OPERATING SYSTEM</th>
+          <th>CPU%</th>
+          <th>RAM%</th>
+          <th>DISK%</th>
+          <th>UPTIME</th>
+          <th>LAST HEARTBEAT</th>
+          <th>TELEMETRY</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if endpoints %}
+          {% for ep in endpoints %}
+            <tr>
+              <td>
+                <span class="badge badge-{{ ep.status }}">
+                  {% if ep.status == 'online' %}●{% endif %} {{ ep.status|upper }}
+                </span>
+              </td>
+              <td style="font-weight: 700; color: #fff;">
+                {{ ep.hostname }}
+              </td>
+              <td><span class="cyber-code">{{ ep.agent_id }}</span></td>
+              <td><span style="color: var(--text-cyan);">{{ ep.ip_address }}</span></td>
+              <td><span style="font-size: 0.75rem; color: var(--text-secondary);">{{ ep.os }}</span></td>
+              
+              <!-- CPU meter -->
+              <td style="min-width: 90px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: {% if ep.cpu_percent and ep.cpu_percent > 85 %}var(--neon-red){% else %}#fff{% endif %};">
+                  {{ ep.cpu_percent|round(1) if ep.cpu_percent is not none else '0.0' }}%
+                </div>
+                <div class="progress-track" style="height: 4px;">
+                  <div class="progress-fill {% if ep.cpu_percent and ep.cpu_percent > 85 %}red{% elif ep.cpu_percent and ep.cpu_percent > 60 %}amber{% endif %}" style="width: {{ ep.cpu_percent or 0 }}%;"></div>
+                </div>
+              </td>
+
+              <!-- RAM meter -->
+              <td style="min-width: 90px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: {% if ep.memory_percent and ep.memory_percent > 85 %}var(--neon-red){% else %}#fff{% endif %};">
+                  {{ ep.memory_percent|round(1) if ep.memory_percent is not none else '0.0' }}%
+                </div>
+                <div class="progress-track" style="height: 4px;">
+                  <div class="progress-fill {% if ep.memory_percent and ep.memory_percent > 85 %}red{% else %}green{% endif %}" style="width: {{ ep.memory_percent or 0 }}%;"></div>
+                </div>
+              </td>
+
+              <!-- Disk meter -->
+              <td style="min-width: 80px;">
+                <div style="font-size: 0.75rem; color: #fff;">
+                  {{ ep.disk_percent|round(1) if ep.disk_percent is not none else '0.0' }}%
+                </div>
+                <div class="progress-track" style="height: 4px;">
+                  <div class="progress-fill" style="width: {{ ep.disk_percent or 0 }}%;"></div>
+                </div>
+              </td>
+
+              <td style="font-size: 0.75rem; color: var(--text-secondary);">
+                {{ ep.uptime_seconds|format_uptime }}
+              </td>
+
+              <td style="font-size: 0.72rem; color: var(--text-muted); white-space: nowrap;">
+                {{ ep.last_seen|format_dt }}
+              </td>
+
+              <td>
+                <button type="button" class="btn btn-cyan btn-sm" onclick="inspectEndpoint('{{ ep.agent_id }}')">
+                  INSPECT
+                </button>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+              [NO MATCHING ENDPOINTS FOUND IN INVENTORY]
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
