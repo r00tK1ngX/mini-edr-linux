@@ -167,7 +167,7 @@
 
                   <!-- Resolve / Dismiss Buttons -->
                   {% if a.status != 'resolved' %}
-                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, '{{ a.title|escape }}')">
+                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, {{ a.title|tojson }})">
                       RESOLVE
                     </button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="dismissAlert({{ a.id }})" title="Dismiss as False Positive">

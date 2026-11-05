@@ -235,7 +235,7 @@
                     </button>
                   {% endif %}
                   {% if a.status != 'resolved' %}
-                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, '{{ a.title|escape }}')">
+                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, {{ a.title|tojson }})">
                       RESOLVE
                     </button>
                   {% else %}
