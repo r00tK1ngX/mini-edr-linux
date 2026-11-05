@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block title %}OVERVIEW // MINI-EDR SOC COMMAND CENTER{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+  <div>
+    <div class="header-meta">
+      <span>GRID: ACTIVE</span>
+      <span>•</span>
+      <span>MONITORING: REAL-TIME</span>
+    </div>
+    <h1 class="page-title">SOC <span>COMMAND CENTER</span></h1>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('web.alerts') }}" class="btn btn-cyan btn-sm">
+      <span>🚨</span> TRIAGE INCIDENTS
+    </a>
+    <button type="button" class="btn btn-outline btn-sm" onclick="location.reload()">
+      <span>🔄</span> SYNC
+    </button>
+  </div>
+</div>
+
+<!-- KPI Metric Tiles Grid -->
+<div class="kpi-grid">
+  <!-- Endpoints Tile -->
+  <div class="kpi-card cyan">
+    <div class="kpi-top">
+      <span class="kpi-label">MONITORED ENDPOINTS</span>
+      <div class="kpi-icon">🖥️</div>
+    </div>
+    <div class="kpi-value">{{ total_endpoints }}</div>
+    <div class="kpi-meta">
+      <span style="color: var(--neon-green); font-weight: 700;">{{ online_endpoints }} ONLINE</span>
+      <span>•</span>
+      <span style="color: {% if offline_endpoints > 0 %}var(--neon-red){% else %}var(--text-muted){% endif %}; font-weight: 700;">
+        {{ offline_endpoints }} OFFLINE
+      </span>
+    </div>
+  </div>
+
+  <!-- Open Incidents Tile -->
+  <div class="kpi-card {% if alert_summary.open_alerts > 0 %}red{% else %}green{% endif %}">
+    <div class="kpi-top">
+      <span class="kpi-label">ACTIVE INCIDENTS</span>
+      <div class="kpi-icon">🚨</div>
+    </div>
+    <div class="kpi-value">{{ alert_summary.open_alerts }}</div>
+    <div class="kpi-meta">
+      <span style="color: var(--neon-cyan);">{{ alert_summary.by_status.new }} NEW</span>
+      <span>•</span>
+      <span style="color: var(--neon-yellow);">{{ alert_summary.by_status.acknowledged }} IN PROGRESS</span>
+    </div>
+  </div>
+
+  <!-- High Risk Threats Tile -->
+  <div class="kpi-card {% if alert_summary.critical_and_high_alerts > 0 %}red{% else %}cyan{% endif %}">
+    <div class="kpi-top">
+      <span class="kpi-label">CRITICAL & HIGH THREATS</span>
+      <div class="kpi-icon">⚠️</div>
+    </div>
+    <div class="kpi-value">{{ alert_summary.critical_and_high_alerts }}</div>
+    <div class="kpi-meta">
+      <span style="color: var(--neon-red);">{{ alert_summary.by_severity.critical }} CRITICAL</span>
+      <span>•</span>
+      <span style="color: var(--neon-orange);">{{ alert_summary.by_severity.high }} HIGH</span>
+    </div>
+  </div>
+
+  <!-- Ingested Events Tile -->
+  <div class="kpi-card purple">
+    <div class="kpi-top">
+      <span class="kpi-label">SECURITY EVENTS AUDIT</span>
+      <div class="kpi-icon">📡</div>
+    </div>
+    <div class="kpi-value">{{ total_events }}</div>
+    <div class="kpi-meta">
+      <span>{{ alert_summary.resolved_alerts }} RESOLVED INCIDENTS</span>
+    </div>
+  </div>
+</div>
+
+<!-- Middle Section: Resource Telemetry & Severity Distribution -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Endpoint Fleet Resource Health -->
+  <div class="cyber-card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="dot"></div>
+        FLEET RESOURCE TELEMETRY
+      </div>
+      <span class="badge badge-online">LIVE AVERAGE</span>
+    </div>
+    <div class="card-body">
+      <!-- CPU Gauge -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name">AVG CPU UTILIZATION</span>
+          <span class="gauge-value" style="color: {% if avg_cpu > 80 %}var(--neon-red){% elif avg_cpu > 50 %}var(--neon-yellow){% else %}var(--neon-cyan){% endif %};">
+            {{ avg_cpu }}%
+          </span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill {% if avg_cpu > 80 %}red{% elif avg_cpu > 50 %}amber{% endif %}" style="width: {{ avg_cpu }}%;"></div>
+        </div>
+      </div>
+
+      <!-- RAM Gauge -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name">AVG MEMORY UTILIZATION</span>
+          <span class="gauge-value" style="color: {% if avg_mem > 80 %}var(--neon-red){% elif avg_mem > 50 %}var(--neon-yellow){% else %}var(--neon-green){% endif %};">
+            {{ avg_mem }}%
+          </span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill {% if avg_mem > 80 %}red{% elif avg_mem > 50 %}amber{% else %}green{% endif %}" style="width: {{ avg_mem }}%;"></div>
+        </div>
+      </div>
+
+      <!-- Disk Gauge -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name">AVG DISK STORAGE</span>
+          <span class="gauge-value">{{ avg_disk }}%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: {{ avg_disk }}%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Incident Severity Distribution -->
+  <div class="cyber-card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="dot" style="background: var(--neon-red); box-shadow: 0 0 6px var(--neon-red);"></div>
+        INCIDENT SEVERITY MATRIX
+      </div>
+      <span class="badge badge-new">{{ alert_summary.total_alerts }} TOTAL</span>
+    </div>
+    <div class="card-body">
+      <!-- Critical -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name" style="color: var(--neon-red);">CRITICAL</span>
+          <span class="gauge-value">{{ alert_summary.by_severity.critical }}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill red" style="width: {% if alert_summary.total_alerts > 0 %}{{ (alert_summary.by_severity.critical / alert_summary.total_alerts * 100)|round(1) }}{% else %}0{% endif %}%;"></div>
+        </div>
+      </div>
+
+      <!-- High -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name" style="color: var(--neon-orange);">HIGH</span>
+          <span class="gauge-value">{{ alert_summary.by_severity.high }}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill amber" style="width: {% if alert_summary.total_alerts > 0 %}{{ (alert_summary.by_severity.high / alert_summary.total_alerts * 100)|round(1) }}{% else %}0{% endif %}%;"></div>
+        </div>
+      </div>
+
+      <!-- Medium -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name" style="color: var(--neon-yellow);">MEDIUM</span>
+          <span class="gauge-value">{{ alert_summary.by_severity.medium }}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill amber" style="width: {% if alert_summary.total_alerts > 0 %}{{ (alert_summary.by_severity.medium / alert_summary.total_alerts * 100)|round(1) }}{% else %}0{% endif %}%;"></div>
+        </div>
+      </div>
+
+      <!-- Low & Info -->
+      <div class="gauge-row">
+        <div class="gauge-label-bar">
+          <span class="gauge-name" style="color: var(--neon-cyan);">LOW / INFO</span>
+          <span class="gauge-value">{{ alert_summary.by_severity.low + alert_summary.by_severity.info }}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: {% if alert_summary.total_alerts > 0 %}{{ ((alert_summary.by_severity.low + alert_summary.by_severity.info) / alert_summary.total_alerts * 100)|round(1) }}{% else %}0{% endif %}%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Active Incidents Feed Table -->
+<div class="cyber-card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <div class="card-title">
+      <div class="dot" style="background: var(--neon-red); box-shadow: 0 0 6px var(--neon-red);"></div>
+      ACTIVE INCIDENT DETECTION STREAM
+    </div>
+    <a href="{{ url_for('web.alerts') }}" class="btn btn-outline btn-sm">VIEW ALL INCIDENTS &rarr;</a>
+  </div>
+  <div class="table-responsive">
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>SEVERITY</th>
+          <th>TITLE</th>
+          <th>RULE ID</th>
+          <th>ENDPOINT</th>
+          <th>STATUS</th>
+          <th>FIRST SEEN</th>
+          <th>ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if recent_alerts %}
+          {% for a in recent_alerts %}
+            <tr id="alert-row-{{ a.id }}">
+              <td><span class="cyber-code">#{{ a.id }}</span></td>
+              <td><span class="badge badge-{{ a.severity }}">{{ a.severity|upper }}</span></td>
+              <td style="font-weight: 700; color: #fff;">{{ a.title }}</td>
+              <td><span class="cyber-code" style="font-size: 0.72rem;">{{ a.rule_id }}</span></td>
+              <td><span class="cyber-code">{{ a.agent_id }}</span></td>
+              <td><span id="status-badge-{{ a.id }}" class="badge badge-{{ a.status }}">{{ a.status|upper }}</span></td>
+              <td style="font-size: 0.75rem; color: var(--text-muted);">{{ a.first_seen_at|format_dt }}</td>
+              <td id="actions-{{ a.id }}">
+                <div style="display: flex; gap: 0.35rem;">
+                  <button type="button" class="btn btn-cyan btn-sm" onclick="viewEvidence({{ a.id }})">
+                    EVIDENCE
+                  </button>
+                  {% if a.status == 'new' %}
+                    <button type="button" id="btn-ack-{{ a.id }}" class="btn btn-amber btn-sm" onclick="acknowledgeAlert({{ a.id }})">
+                      ACK
+                    </button>
+                  {% endif %}
+                  {% if a.status != 'resolved' %}
+                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, '{{ a.title|escape }}')">
+                      RESOLVE
+                    </button>
+                  {% else %}
+                    <span style="color: var(--text-muted); font-size: 0.72rem; padding: 0.3rem;">CLOSED</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              [RADAR CLEAN: NO RECENT INCIDENTS DETECTED]
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Security Events Audit Feed -->
+<div class="cyber-card">
+  <div class="card-header">
+    <div class="card-title">
+      <div class="dot" style="background: var(--neon-purple); box-shadow: 0 0 6px var(--neon-purple);"></div>
+      SECURITY TELEMETRY LOG STREAM
+    </div>
+    <a href="{{ url_for('web.events') }}" class="btn btn-outline btn-sm">VIEW AUDIT LOG &rarr;</a>
+  </div>
+  <div class="table-responsive">
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>EVENT ID</th>
+          <th>EVENT TYPE</th>
+          <th>SEVERITY</th>
+          <th>TITLE</th>
+          <th>ENDPOINT</th>
+          <th>OCCURRED AT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if recent_events %}
+          {% for ev in recent_events %}
+            <tr>
+              <td><span class="cyber-code">#{{ ev.id }}</span></td>
+              <td><span style="color: var(--neon-purple); font-weight: 700;">{{ ev.event_type }}</span></td>
+              <td><span class="badge badge-{{ ev.severity }}">{{ ev.severity|upper }}</span></td>
+              <td style="color: #fff;">{{ ev.title }}</td>
+              <td><span class="cyber-code">{{ ev.agent_id }}</span></td>
+              <td style="font-size: 0.75rem; color: var(--text-muted);">{{ ev.occurred_at|format_dt }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              [NO SECURITY EVENTS RECORDED YET]
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

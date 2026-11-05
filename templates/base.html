@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MINI EDR // CYBER SOC CONSOLE{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+  <!-- CRT Scanlines Overlay -->
+  <div class="scanlines"></div>
+
+  <!-- HUD Top Navigation -->
+  <header class="cyber-nav">
+    <div class="nav-inner">
+      <div class="brand-section">
+        <a href="{{ url_for('web.dashboard') }}" class="brand-logo">
+          <div class="brand-icon">
+            <span style="font-size: 14px; font-weight: 900; color: #000;">⚡</span>
+          </div>
+          <div class="brand-title">MINI-<span>EDR</span></div>
+        </a>
+        <span class="brand-badge">SOC NODE // V2.0</span>
+      </div>
+
+      <!-- Main Navigation Tabs -->
+      <nav>
+        <ul class="nav-links">
+          <li>
+            <a href="{{ url_for('web.dashboard') }}" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+              <span>⚡</span> OVERVIEW
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('web.endpoints') }}" class="nav-link {% if active_page == 'endpoints' %}active{% endif %}">
+              <span>🖥️</span> ENDPOINTS
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('web.alerts') }}" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">
+              <span>🚨</span> INCIDENTS & ALERTS
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('web.events') }}" class="nav-link {% if active_page == 'events' %}active{% endif %}">
+              <span>📡</span> AUDIT LOGS
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- HUD Status / Clock -->
+      <div class="hud-status">
+        <div class="beacon">
+          <div class="beacon-dot"></div>
+          <span>GRID ACTIVE</span>
+        </div>
+        <div class="hud-clock" id="hudClock">--:--:-- UTC</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="cyber-container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div style="margin-bottom: 1.5rem;">
+          {% for category, msg in messages %}
+            <div class="cyber-toast {{ category }}" style="animation: none; margin-bottom: 0.5rem;">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+
+    <!-- Footer -->
+    <footer class="cyber-footer">
+      <div class="footer-left">
+        <span>MINI-EDR LINUX DEFENSE PLATFORM</span>
+        <span style="color: var(--neon-cyan);">// PROTOCOL: REST API v1</span>
+      </div>
+      <div>
+        <span>AUTHENTICATED SOC OPERATOR SESSION</span>
+      </div>
+    </footer>
+  </main>
+
+  <!-- =========================================================================
+       MODALS DECK
+       ========================================================================= -->
+
+  <!-- Evidence Inspection Modal -->
+  <div class="modal-backdrop" id="evidenceModal">
+    <div class="cyber-modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🔎</span> [SECURITY_EVIDENCE_DECK]
+        </div>
+        <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
+      </div>
+      <div class="modal-body" id="evidenceModalBody">
+        <!-- Injected by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resolve Incident Prompt Modal -->
+  <div class="modal-backdrop" id="resolveModal">
+    <div class="cyber-modal" style="max-width: 550px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🛡️</span> [INCIDENT_RESOLUTION_CONSOLE]
+        </div>
+        <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="resolveModalAlertTitle" style="color: var(--neon-cyan); font-weight: 700; margin-bottom: 1rem; font-size: 0.95rem;">
+          ALERT #--
+        </div>
+        <label for="resolveNoteInput" style="display: block; font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.4rem; letter-spacing: 0.08em;">
+          Resolution Note / Action Taken:
+        </label>
+        <textarea id="resolveNoteInput" class="cyber-input" style="width: 100%; min-height: 100px; resize: vertical;" placeholder="e.g. Malicious reverse shell killed, binary /tmp/evil removed, root password changed."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CANCEL</button>
+        <button type="button" class="btn btn-green" onclick="submitResolveAlert()">CONFIRM RESOLVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Endpoint Telemetry Modal -->
+  <div class="modal-backdrop" id="endpointModal">
+    <div class="cyber-modal" style="max-width: 900px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🖥️</span> [ENDPOINT_TELEMETRY_DECK]
+        </div>
+        <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
+      </div>
+      <div class="modal-body" id="endpointModalBody">
+        <!-- Injected by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
