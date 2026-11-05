@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "thresholds": {
+    "cpu_percent": 85.0,
+    "memory_percent": 85.0
+  },
+  "suspicious_paths": [
+    "/tmp",
+    "/var/tmp",
+    "/dev/shm"
+  ],
+  "sensitive_files": [
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/etc/ssh/sshd_config",
+    "/etc/pam.d/common-auth",
+    "/etc/pam.d/sshd",
+    "/etc/crontab"
+  ],
+  "rules": {
+    "rule-process-high-cpu": {
+      "enabled": true,
+      "name": "High CPU Consumption",
+      "threshold_percent": 85.0,
+      "severity": "medium",
+      "base_score": 30,
+      "description": "Process CPU consumption exceeded configured threshold"
+    },
+    "rule-process-high-memory": {
+      "enabled": true,
+      "name": "High Memory Usage",
+      "threshold_percent": 85.0,
+      "severity": "medium",
+      "base_score": 30,
+      "description": "Process Memory consumption exceeded configured threshold"
+    },
+    "rule-process-suspicious-path": {
+      "enabled": true,
+      "name": "Process Running from Suspicious Path",
+      "suspicious_paths": ["/tmp", "/var/tmp", "/dev/shm"],
+      "severity": "high",
+      "base_score": 50,
+      "description": "Process binary is executing from a temporary or world-writable directory"
+    },
+    "rule-process-hidden-binary": {
+      "enabled": true,
+      "name": "Hidden Executable Execution",
+      "severity": "high",
+      "base_score": 50,
+      "description": "Process is running from a hidden file or hidden directory path"
+    },
+    "rule-fim-sensitive-tampered": {
+      "enabled": true,
+      "name": "Critical System File Tampering",
+      "severity": "high",
+      "base_score": 60,
+      "description": "Integrity violation on a sensitive system configuration or authentication file"
+    },
+    "rule-correlated-multistage": {
+      "enabled": true,
+      "name": "Multi-Stage Suspicious Activity",
+      "severity": "critical",
+      "min_score": 75,
+      "description": "Multiple correlated threat indicators detected on the same endpoint"
+    }
+  }
+}

@@ -439,6 +439,12 @@ def ingest_process_telemetry():
 
     try:
         saved = proc_repo.create_snapshot(snapshot, cleaned_processes)
+        try:
+            from detection.engine import DetectionEngine
+            det_engine = DetectionEngine(db_path)
+            det_engine.evaluate_process_snapshot(agent_id, saved["id"], cleaned_processes)
+        except Exception as det_exc:
+            current_app.logger.warning("Detection engine evaluation error: %s", det_exc)
     except Exception:
         current_app.logger.exception("Failed to record process snapshot")
         return _error("Internal server error", 500)
@@ -624,6 +630,12 @@ def ingest_security_event():
 
     try:
         saved = event_repo.record(event_data)
+        try:
+            from detection.engine import DetectionEngine
+            det_engine = DetectionEngine(db_path)
+            det_engine.evaluate_security_event(agent_id, saved)
+        except Exception as det_exc:
+            current_app.logger.warning("Detection engine event evaluation error: %s", det_exc)
     except Exception:
         current_app.logger.exception("Failed to record security event")
         return _error("Internal server error", 500)

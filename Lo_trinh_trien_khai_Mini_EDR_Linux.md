@@ -636,75 +636,57 @@ endpoint, hoạt động end-to-end từ thu thập mạng đến lưu trữ dat
 
 ## Phase 5 --- Detection Engine
 
-**Trạng thái: Chưa triển khai.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu).**
 
 ### Mục tiêu
 
-Chuyển telemetry và security events thành phát hiện có thể giải thích.
+Chuyển telemetry và security events thành phát hiện có thể giải thích, kết hợp nhiều nguồn dữ liệu (tiến trình, FIM, tài nguyên) để đánh giá rủi ro chính xác và tạo cảnh báo an ninh.
 
-### File dự kiến
+### Các thành phần đã triển khai
 
-``` text
-detection/
-├── __init__.py
-├── rules.py
-├── engine.py
-└── correlation.py
+1.  **Cấu hình tập trung (`config/rules.json`):**
+    -   Thiết lập ngưỡng tài nguyên (`cpu_percent: 85.0`, `memory_percent: 85.0`).
+    -   Định nghĩa danh sách thư mục thực thi đáng ngờ (`/tmp`, `/var/tmp`, `/dev/shm`).
+    -   Định nghĩa danh sách tệp cấu hình/xác thực nhạy cảm cần bảo vệ nghiêm ngặt (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `/etc/ssh/sshd_config`, `/etc/pam.d/`, v.v.).
 
-config/
-└── rules.json
-```
+2.  **Hệ thống Rule phát hiện (`detection/rules.py`):**
+    -   `DetectionResult`: Cấu trúc chuẩn hóa kết quả phát hiện kèm `rule_id`, `severity`, `risk_score`, `evidence`, `fingerprint` và `event_type`.
+    -   `ProcessHighCpuRule`: Phát hiện tiến trình chiếm dụng CPU vượt ngưỡng.
+    -   `ProcessHighMemoryRule`: Phát hiện tiến trình chiếm dụng bộ nhớ RAM vượt ngưỡng.
+    -   `ProcessSuspiciousPathRule`: Phát hiện binary thực thi từ thư mục tạm hoặc thế giới có quyền ghi (`/tmp`, `/var/tmp`, `/dev/shm`).
+    -   `ProcessHiddenBinaryRule`: Phát hiện binary hoặc tiến trình ẩn (tên file hoặc thư mục cha bắt đầu bằng dấu chấm `.`).
+    -   `FimSensitiveFileRule`: Phát hiện hành vi can thiệp, chỉnh sửa, xóa các tệp xác thực tối quan trọng của hệ điều hành.
+    -   `RuleRegistry`: Nạp động các quy tắc từ cấu hình, quản lý và điều phối đánh giá đa dạng nguồn dữ liệu.
 
-### Nhóm rule ban đầu
+3.  **Hệ thống tương quan và chấm điểm rủi ro (`detection/correlation.py`):**
+    -   `CorrelationEngine`: Kết hợp tín hiệu từ nhiều nguồn khác nhau trên cùng một endpoint.
+    -   Mô hình chấm điểm rủi ro (Risk Score 0--100) minh bạch:
+        -   Hiện tượng CPU cao đơn lẻ: Điểm rủi ro cơ sở (30 điểm), mức độ `medium` --- **Tuyệt đối không kết luận malware chỉ từ một ngưỡng CPU đơn lẻ**.
+        -   Thực thi từ thư mục đáng ngờ (`/tmp`): Điểm rủi ro (50 điểm).
+        -   Kết hợp thư mục đáng ngờ + CPU cao: Điểm rủi ro tăng vọt (80 điểm), mức độ `high`.
+        -   Kết hợp FIM (tệp vừa được thả vào thư mục) + Tiến trình chạy từ tệp đó + CPU cao: Điểm rủi ro đạt tối đa (90--100 điểm), mức độ `critical` (chuỗi tấn công multi-stage malware execution).
+    -   Mỗi phát hiện tương quan đều lưu đầy đủ bảng giải trình `factors` chi tiết, minh bạch lý do nâng mức độ cảnh báo.
 
-  Rule                     Điều kiện
-  ------------------------ ---------------------------------------------
-  High CPU                 Process có CPU cao kéo dài
-  High Memory              Process sử dụng RAM vượt ngưỡng
-  Suspicious Path          Executable chạy từ thư mục bất thường
-  File Integrity           File được bảo vệ bị sửa/xóa
-  Suspicious Combination   Nhiều dấu hiệu đáng ngờ xuất hiện cùng nhau
+4.  **Detection Orchestrator (`detection/engine.py`):**
+    -   Tích hợp trực tiếp với Data Access Layer (`EventRepository`, `AlertRepository`, `ProcessRepository`).
+    -   Khi phát hiện vi phạm quy tắc, tự động ghi nhận security event mới với `source = "detection"` vào bảng `security_events`.
+    -   Tự động tổng hợp và tạo/cập nhật cảnh báo trong bảng `alerts` (trạng thái `new`) và liên kết các sự kiện vi phạm vào bảng `alert_events`.
+    -   Được kích hoạt tự động theo thời gian thực (real-time) ngay khi Server nhận dữ liệu snapshot tiến trình hoặc security event tại `server/routes.py`.
 
-Ví dụ cấu hình định hướng:
+5.  **Kiểm thử toàn diện (`tests/test_detection.py`):**
+    -   22 test cases kiểm thử từng rule độc lập, kiểm thử nạp cấu hình JSON, kiểm thử logic tương quan đa nguồn, kiểm thử chống kết luận sai từ CPU đơn lẻ, kiểm thử tương tác database và kiểm thử kích hoạt real-time qua API.
 
-``` json
-{
-  "thresholds": {
-    "cpu_percent": 85,
-    "memory_percent": 85
-  },
-  "suspicious_paths": [
-    "/tmp",
-    "/var/tmp",
-    "/dev/shm"
-  ]
-}
-```
+### Kết quả kiểm thử
 
-Các ngưỡng trên chỉ là giá trị demo ban đầu, cần kiểm thử và điều chỉnh
-theo môi trường.
-
-### Correlation --- kết hợp dấu hiệu
-
-Ví dụ:
-
-1.  Một file mới xuất hiện trong `/tmp`.
-2.  Một process chạy từ đường dẫn đó.
-3.  Process có CPU bất thường kéo dài.
-
-Một dấu hiệu đơn lẻ chưa đủ kết luận malware. Khi kết hợp, hệ thống có
-cơ sở tăng severity hoặc risk score.
-
-Có thể triển khai risk score 0--100 để minh họa, nhưng phải lưu được
-rule và evidence giải thích điểm số.
+-   Toàn bộ test suite: **146/146 tests PASSED** (52 agent tests, 38 API tests, 22 detection tests, 13 database tests, 10 repository tests, 7 migration tests, 4 E2E tests).
 
 ### Điều kiện hoàn thành Phase 5
 
--   Rule chạy trên dữ liệu thực tế.
--   Có test cho từng rule.
--   Event được tạo với severity/evidence.
--   Correlation hoạt động với dữ liệu nhiều nguồn.
--   Không kết luận malware chỉ từ một ngưỡng CPU đơn lẻ.
+-   [x] Rule chạy trên dữ liệu thực tế (tiến trình, FIM, hệ thống).
+-   [x] Có unit/integration test đầy đủ cho từng rule.
+-   [x] Event được tạo với severity/evidence rõ ràng (`source = "detection"`).
+-   [x] Correlation hoạt động tốt với dữ liệu nhiều nguồn kết hợp.
+-   [x] Không kết luận malware chỉ từ một ngưỡng CPU đơn lẻ.
 
 ------------------------------------------------------------------------
 
