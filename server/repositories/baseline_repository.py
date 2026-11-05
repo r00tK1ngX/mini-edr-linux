@@ -1,7 +1,12 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import sqlite3
 
 from server.repositories.base import BaseRepository
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class BaselineRepository(BaseRepository):
@@ -13,6 +18,7 @@ class BaselineRepository(BaseRepository):
         connection: Optional[sqlite3.Connection] = None,
     ) -> Dict[str, Any]:
         """Insert or update a single file baseline record."""
+        now = _utc_now()
         sql = """
             INSERT INTO file_baselines (
                 agent_id,
@@ -56,9 +62,9 @@ class BaselineRepository(BaseRepository):
             "mtime_ns": baseline["mtime_ns"],
             "file_mode": baseline["file_mode"],
             "state": baseline.get("state", "present"),
-            "first_seen_at": baseline["first_seen_at"],
-            "last_seen_at": baseline["last_seen_at"],
-            "last_checked_at": baseline["last_checked_at"],
+            "first_seen_at": baseline.get("first_seen_at", now),
+            "last_seen_at": baseline.get("last_seen_at", now),
+            "last_checked_at": baseline.get("last_checked_at", now),
         }
         with self._connection(connection) as conn:
             cursor = conn.execute(sql, params)
@@ -115,6 +121,7 @@ class BaselineRepository(BaseRepository):
                 last_seen_at = excluded.last_seen_at,
                 last_checked_at = excluded.last_checked_at;
         """
+        now = _utc_now()
         formatted = [
             {
                 "agent_id": agent_id,
@@ -124,9 +131,9 @@ class BaselineRepository(BaseRepository):
                 "mtime_ns": b["mtime_ns"],
                 "file_mode": b["file_mode"],
                 "state": b.get("state", "present"),
-                "first_seen_at": b["first_seen_at"],
-                "last_seen_at": b["last_seen_at"],
-                "last_checked_at": b["last_checked_at"],
+                "first_seen_at": b.get("first_seen_at", now),
+                "last_seen_at": b.get("last_seen_at", now),
+                "last_checked_at": b.get("last_checked_at", now),
             }
             for b in baselines
         ]

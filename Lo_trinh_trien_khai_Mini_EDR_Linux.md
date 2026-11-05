@@ -482,7 +482,7 @@ Kiểm thử đã đạt:
 
 ## Phase 3 --- Xây dựng Linux Agent
 
-**Trạng thái: Chưa triển khai theo roadmap.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu Module 1 đến Module 5).**
 
 ### Mục tiêu
 
@@ -490,119 +490,100 @@ Agent chạy trên Linux, thu thập dữ liệu thực tế và gửi về Serv
 
 ### Module 1 --- `agent/system_collector.py`
 
-Thu thập:
+**Đã hoàn thành và có 16 unit tests vượt qua (`tests/test_system_collector.py`).**
 
--   Hostname.
--   IP address.
--   Operating System.
--   CPU usage.
--   RAM usage.
--   Disk usage.
--   Uptime.
+Chức năng đã xây dựng:
 
-Dùng `psutil`. Phải xử lý trường hợp permission error, interface không
-có IP và giá trị không lấy được.
+-   Thu thập `Hostname` qua socket/platform/`/etc/hostname`.
+-   Thu thập `IP address` qua routing socket UDP & psutil interfaces (trả về `None` an toàn nếu không có mạng).
+-   Thu thập `Operating System` qua `platform.freedesktop_os_release()`, `/etc/os-release` và platform fallback.
+-   Thu thập `CPU usage` qua `psutil.cpu_percent` (ràng buộc chuẩn `0.0` đến `100.0%`).
+-   Thu thập `RAM usage` qua `psutil.virtual_memory().percent` (`0.0` đến `100.0%`).
+-   Thu thập `Disk usage` qua `psutil.disk_usage` (xử lý an toàn `PermissionError` và phân vùng).
+-   Thu thập `Uptime` qua `psutil.boot_time()` và `/proc/uptime` (giây `>= 0.0`).
+-   Cung cấp các hàm `collect_metrics()` (chuẩn hóa payload telemetry) và `collect_system_info()` (chuẩn hóa Heartbeat payload theo Data Contract).
+-   Cung cấp lớp `SystemCollector` hướng đối tượng có khả năng cấu hình tham số đợt quét.
 
 ### Module 2 --- `agent/process_collector.py`
 
-Thu thập:
+**Đã hoàn thành và có 13 unit tests vượt qua (`tests/test_process_collector.py`).**
 
--   PID.
--   PPID nếu lấy được.
--   Process name.
--   Username.
--   CPU percent.
--   Memory percent.
--   Executable path.
--   Process start time nếu lấy được.
+Chức năng đã xây dựng:
 
-Ví dụ dữ liệu:
-
-``` json
-{
-  "pid": 1234,
-  "name": "python3",
-  "username": "root",
-  "cpu_percent": 32.5,
-  "memory_percent": 1.2,
-  "exe": "/usr/bin/python3"
-}
-```
-
-Phải xử lý `NoSuchProcess`, `AccessDenied`, `ZombieProcess` và không để
-một process lỗi làm dừng toàn bộ collector.
+-   Thu thập `PID` (kiểm tra `pid >= 0`).
+-   Thu thập `PPID` (`ppid >= 0` hoặc `None`).
+-   Thu thập `Process name` (chuẩn hóa tên không rỗng, fallback sang tên file binary thực thi `exe` hoặc `proc-<pid>`).
+-   Thu thập `Username` sở hữu tiến trình.
+-   Thu thập `CPU percent` (`>= 0.0%`).
+-   Thu thập `Memory percent` (`0.0` đến `100.0%`).
+-   Thu thập `RSS bytes` (bộ nhớ thực tế tiêu thụ).
+-   Thu thập `Executable path` (`exe_path`).
+-   Thu thập `Process start time` (chuẩn hóa `create_time` sang ISO 8601 UTC).
+-   Bắt và xử lý an toàn các ngoại lệ `NoSuchProcess`, `AccessDenied`, `ZombieProcess` mà không làm crash collector.
+-   Hàm `collect_process_snapshot()` đóng gói dữ liệu snapshot đầy đủ envelope theo chuẩn Data Contract và có thể lưu trực tiếp vào cơ sở dữ liệu qua `ProcessRepository`.
+-   Hỗ trợ tra cứu tiến trình theo PID cụ thể qua `get_process_by_pid()`.
+-   Cung cấp lớp hướng đối tượng `ProcessCollector`.
 
 ### Module 3 --- `agent/file_integrity.py`
 
-Triển khai File Integrity Monitoring (FIM):
+**Đã hoàn thành và có 7 unit tests vượt qua (`tests/test_file_integrity.py`).**
 
--   Quét thư mục được cấu hình.
--   Tạo baseline ban đầu.
--   Tính SHA-256.
--   Phát hiện file mới, sửa đổi và xóa.
--   Có thể dùng mtime/size để lọc trước khi tính hash.
--   Không theo dõi toàn bộ filesystem mặc định.
--   Xử lý symlink, permission và file thay đổi trong lúc đọc.
+Chức năng đã xây dựng:
 
-Ví dụ event:
-
-``` text
-[FILE CREATED] /tmp/demo.txt
-[FILE MODIFIED] /etc/example.conf
-[FILE DELETED] /opt/app/old.conf
-```
+-   Hàm `compute_sha256()` tính mã băm SHA-256 theo từng chunk 64KB, giới hạn kích thước file an toàn tránh treo bộ nhớ, kiểm tra file rỗng chuẩn `e3b0c442...`.
+-   Hàm `inspect_file()` kiểm tra file thông thường, lấy kích thước byte, thời điểm sửa đổi `mtime_ns`, quyền hạn `file_mode` (mask `0o7777`) và hash SHA-256.
+-   Hàm `scan_monitored_paths()` quét các tệp và thư mục được cấu hình, hỗ trợ quét đệ quy (recursive) hoặc 1 cấp, bỏ qua an toàn các symlink vòng lặp hoặc file thiếu quyền đọc.
+-   Hàm `detect_file_changes()` so sánh quét hiện tại với baseline:
+    -   Phát hiện file tạo mới (`change_type = 'created'`).
+    -   Phát hiện file bị chỉnh sửa nội dung hoặc quyền (`change_type = 'modified'`).
+    -   Phát hiện file bị xóa (`change_type = 'deleted'`), tự động cập nhật trạng thái `state = 'missing'` trong baseline nhưng vẫn bảo lưu hash cũ để phục vụ forensics.
+-   Hàm `format_baseline_sync_payload()` chuẩn hóa payload đồng bộ baseline (`POST /api/v1/file-baselines`) theo đúng Data Contract.
+-   Hàm `format_fim_security_event()` sinh sự kiện an ninh tương ứng (`fim_file_created`, `fim_file_modified`, `fim_file_deleted`) kèm fingerprint và evidence chi tiết.
+-   Cung cấp lớp hướng đối tượng `FileIntegrityMonitor`.
 
 ### Module 4 --- `agent/client.py`
 
-Chịu trách nhiệm:
+**Đã hoàn thành và có 10 unit tests vượt qua (`tests/test_agent_client.py`).**
 
--   Gửi heartbeat.
--   Gửi system telemetry.
--   Gửi process snapshots.
--   Gửi security events.
--   Gửi Bearer Token.
--   Timeout.
--   Retry có giới hạn và backoff.
--   Không log token hoặc dữ liệu nhạy cảm.
--   Xử lý Server tạm thời không kết nối được.
+Chức năng đã xây dựng:
+
+-   Sử dụng thư viện chuẩn `urllib.request` thuần túy, zero-dependency, đảm bảo Agent siêu nhẹ và tương thích mọi bản phân phối Linux.
+-   Gửi đầy đủ các loại payload lên API Server:
+    -   `send_heartbeat()`: Gửi nhịp tim định kỳ (`POST /api/v1/heartbeat`).
+    -   `send_system_telemetry()`: Gửi metrics tài nguyên (`POST /api/v1/telemetry/system`).
+    -   `send_process_snapshot()`: Gửi toàn bộ snapshot tiến trình (`POST /api/v1/telemetry/processes`).
+    -   `send_file_baselines()`: Đồng bộ trạng thái baseline tệp (`POST /api/v1/file-baselines`).
+    -   `send_security_event()`: Gửi sự kiện an ninh (`POST /api/v1/events`).
+-   Gửi header xác thực an toàn `Authorization: Bearer <token>`, tuyệt đối không log token hay thông tin nhạy cảm.
+-   Cơ chế kiểm tra kết nối `check_health()` (`GET /health`).
+-   Cơ chế Retry thông minh với Exponential Backoff:
+    -   Tự động thử lại khi mất mạng, DNS timeout, hoặc server gặp sự cố 5xx.
+    -   Tuyệt đối **không retry** khi gặp lỗi Client 401 (sai token) hoặc 400 (sai payload), mà trả ngay ngoại lệ `AgentAuthenticationError` / `AgentRequestError`.
+    -   Ném ngoại lệ `AgentConnectionError` rõ ràng khi đã thử hết số lần retry tối đa.
 
 ### Module 5 --- `agent/main.py`
 
-Agent Orchestrator điều phối collector và client.
+**Đã hoàn thành và có 6 unit tests vượt qua (`tests/test_agent_orchestrator.py`).**
 
-``` text
-START AGENT
-    |
-    v
-COLLECT SYSTEM INFO
-    |
-    v
-COLLECT PROCESS INFO
-    |
-    v
-SCAN PROTECTED FILES
-    |
-    v
-SEND DATA TO SERVER
-    |
-    v
-WAIT / SLEEP
-    |
-    v
-REPEAT
-```
+Chức năng đã xây dựng:
 
-Ban đầu có thể dùng chu kỳ 5 giây để demo. Sau đó tách chu kỳ heartbeat,
-process scan và FIM để tránh quét file quá thường xuyên.
+-   Lớp `AgentConfig`: Quản lý cấu hình, tự động đọc biến môi trường và file `.env` (`EDR_AGENT_ID`, `EDR_SERVER_URL`, `EDR_API_TOKEN`, `EDR_HEARTBEAT_INTERVAL`, `EDR_PROCESS_SCAN_INTERVAL`, `EDR_FIM_SCAN_INTERVAL`, `EDR_MONITORED_PATHS`).
+-   Lớp điều phối `AgentOrchestrator`:
+    -   Điều phối độc lập 3 luồng chu kỳ (Heartbeat, Process Scan, FIM Scan).
+    -   Khởi tạo và đồng bộ baseline FIM ở chu kỳ đầu, sau đó theo dõi phát hiện thay đổi và gửi security events.
+    -   Hỗ trợ `run_single_cycle()` độc lập, hỗ trợ cờ `force_all` cho phép chạy đơn lẻ hoặc chạy lặp lại liên tục.
+    -   Xử lý tín hiệu ngắt `SIGINT` (Ctrl+C) và `SIGTERM` đảm bảo Agent dừng an toàn mà không làm hỏng tài nguyên (Graceful shutdown).
+    -   Bắt ngoại lệ cấp độ chu kỳ, đảm bảo một lỗi mạng tạm thời hoặc một task collector không làm sập tiến trình daemon của Agent.
+-   CLI Entrypoint: Hỗ trợ các tham số dòng lệnh `--once` (chạy 1 chu kỳ rồi thoát), `--debug` (bật log chi tiết), `--server` và `--agent-id`.
 
 ### Điều kiện hoàn thành Phase 3
 
--   Agent chạy ổn định trên Linux.
--   Collector trả dữ liệu hợp lệ.
--   Lỗi permission/process không làm Agent crash.
--   Có unit tests.
--   Dữ liệu có thể serialize theo Data Contract.
--   Agent không làm lộ token hoặc dữ liệu nhạy cảm.
+-   [x] Agent chạy ổn định trên Linux (môi trường Kali Linux).
+-   [x] Collector trả dữ liệu hợp lệ (System, Process, FIM).
+-   [x] Lỗi permission/process không làm Agent crash.
+-   [x] Có unit tests đầy đủ (52 tests cho Agent, tổng toàn bộ dự án đạt 111 tests).
+-   [x] Dữ liệu serialize chuẩn theo Data Contract.
+-   [x] Agent không làm lộ token hoặc dữ liệu nhạy cảm trong logs.
 
 ------------------------------------------------------------------------
 
