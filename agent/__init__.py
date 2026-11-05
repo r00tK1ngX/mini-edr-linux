@@ -1,5 +1,12 @@
 """Mini EDR Linux Agent package."""
 
+from agent.client import (
+    AgentAuthenticationError,
+    AgentClient,
+    AgentClientError,
+    AgentConnectionError,
+    AgentRequestError,
+)
 from agent.file_integrity import (
     FileIntegrityMonitor,
     compute_sha256,
@@ -29,6 +36,11 @@ from agent.system_collector import (
 )
 
 __all__ = [
+    "AgentAuthenticationError",
+    "AgentClient",
+    "AgentClientError",
+    "AgentConnectionError",
+    "AgentRequestError",
     "FileIntegrityMonitor",
     "ProcessCollector",
     "SystemCollector",

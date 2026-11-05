@@ -543,17 +543,23 @@ Chức năng đã xây dựng:
 
 ### Module 4 --- `agent/client.py`
 
-Chịu trách nhiệm:
+**Đã hoàn thành và có 10 unit tests vượt qua (`tests/test_agent_client.py`).**
 
--   Gửi heartbeat.
--   Gửi system telemetry.
--   Gửi process snapshots.
--   Gửi security events.
--   Gửi Bearer Token.
--   Timeout.
--   Retry có giới hạn và backoff.
--   Không log token hoặc dữ liệu nhạy cảm.
--   Xử lý Server tạm thời không kết nối được.
+Chức năng đã xây dựng:
+
+-   Sử dụng thư viện chuẩn `urllib.request` thuần túy, zero-dependency, đảm bảo Agent siêu nhẹ và tương thích mọi bản phân phối Linux.
+-   Gửi đầy đủ các loại payload lên API Server:
+    -   `send_heartbeat()`: Gửi nhịp tim định kỳ (`POST /api/v1/heartbeat`).
+    -   `send_system_telemetry()`: Gửi metrics tài nguyên (`POST /api/v1/telemetry/system`).
+    -   `send_process_snapshot()`: Gửi toàn bộ snapshot tiến trình (`POST /api/v1/telemetry/processes`).
+    -   `send_file_baselines()`: Đồng bộ trạng thái baseline tệp (`POST /api/v1/file-baselines`).
+    -   `send_security_event()`: Gửi sự kiện an ninh (`POST /api/v1/events`).
+-   Gửi header xác thực an toàn `Authorization: Bearer <token>`, tuyệt đối không log token hay thông tin nhạy cảm.
+-   Cơ chế kiểm tra kết nối `check_health()` (`GET /health`).
+-   Cơ chế Retry thông minh với Exponential Backoff:
+    -   Tự động thử lại khi mất mạng, DNS timeout, hoặc server gặp sự cố 5xx.
+    -   Tuyệt đối **không retry** khi gặp lỗi Client 401 (sai token) hoặc 400 (sai payload), mà trả ngay ngoại lệ `AgentAuthenticationError` / `AgentRequestError`.
+    -   Ném ngoại lệ `AgentConnectionError` rõ ràng khi đã thử hết số lần retry tối đa.
 
 ### Module 5 --- `agent/main.py`
 
