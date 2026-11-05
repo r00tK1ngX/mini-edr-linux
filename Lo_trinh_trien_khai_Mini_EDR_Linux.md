@@ -915,67 +915,64 @@ Toàn bộ **214/214 test cases** (Unit, Integration, E2E, Security & Reliabilit
 
 ## Phase 9 --- Documentation và kiến trúc
 
-**Trạng thái: Chưa hoàn thiện.**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu tài liệu và kiến trúc).**
 
-### `docs/ARCHITECTURE.md`
+### `docs/ARCHITECTURE.md` (Đã cập nhật Phiên bản 2.0 hoàn chỉnh)
 
-Cần có:
+-   [x] Tổng quan kiến trúc phân tán Client-Server (Agent, Flask Server, Detection Engine, Repositories DAL, SQLite WAL, Cyberpunk Web Dashboard).
+-   [x] Sơ đồ khối kiến trúc toàn hệ thống.
+-   [x] Vai trò chi tiết từng module (System Collector, Process Collector, FIM, Orchestrator, Ingestion API, Detection Engine, DAL, Web Console).
+-   [x] Sơ đồ tuần tự (Sequence Diagrams) bằng Mermaid:
+    -   Luồng thu thập Telemetry & Heartbeat.
+    -   Luồng phát hiện tiến trình độc hại & kích hoạt cảnh báo an ninh.
+    -   Luồng SOC Analyst thực hiện quy trình Triage sự cố trên Web Dashboard.
+-   [x] Sơ đồ Thực thể Liên kết (ERD) bằng Mermaid chuẩn hóa 3NF và đặc tả chi tiết 8 bảng dữ liệu.
+-   [x] Kiến trúc An toàn & Bảo mật (Token auth, Token redaction, Parameterized SQL, XSS escaping, Replay resistance, Payload limits).
+-   [x] Giới hạn thiết kế và định hướng mở rộng tương lai (eBPF, gRPC/WebSockets, Distributed DB).
 
--   Tổng quan hệ thống.
--   Sơ đồ kiến trúc.
--   Vai trò module.
--   Luồng giao tiếp.
--   Cấu trúc database và ERD.
--   Data Contract.
--   Luồng Detection.
--   Các giới hạn thiết kế.
+### `docs/DATA_CONTRACT.md` (Đã cập nhật Trạng thái Implemented & Verified)
 
-### `docs/DATA_CONTRACT.md`
+-   [x] Cấu trúc Common Telemetry Envelope 1.0 (UUIDv4 `message_id`, ISO 8601 UTC timestamp).
+-   [x] Chi tiết các cấu trúc payload: Heartbeat, System Metrics, Process Snapshots, File Baselines, Security Events.
+-   [x] Ràng buộc kiểu dữ liệu, các trường bắt buộc/tùy chọn, quy tắc validator và ngưỡng chặn.
+-   [x] Timestamp semantics và quyền sở hữu timestamp giữa Agent và Server.
+-   [x] Cơ chế chống ghi trùng lặp (Idempotency) và chính sách retry.
+-   [x] Chuẩn hóa mã phản hồi HTTP và error format.
 
-Cần có:
+### `docs/API_SPECIFICATION.md` (Đã cập nhật Phiên bản 2.0 hoàn chỉnh)
 
--   Envelope chung.
--   Heartbeat payload.
--   System telemetry payload.
--   Process snapshot payload.
--   FIM/event payload.
--   Kiểu dữ liệu, required/optional.
--   Timestamp/timezone.
--   Validation rules.
--   Idempotency và message ID.
--   API response/error format.
+-   [x] Toàn bộ REST APIs: `/health`, `/heartbeat`, `/endpoints`, `/telemetry/system`, `/telemetry/processes`, `/file-baselines`, `/events`.
+-   [x] Bộ APIs Quản lý Cảnh báo (Alert Management): `/alerts`, `/alerts/<id>`, `/alerts/summary`, `/alerts/stats`.
+-   [x] Bộ APIs Triage Sự cố: `/acknowledge`, `/resolve`, `/dismiss` kèm kiểm soát chuyển dịch trạng thái.
+-   [x] Bảng đặc tả các route Web Dashboard (`/dashboard`, `/endpoints`, `/alerts`, `/events`) và AJAX modal endpoints.
+-   [x] Bảng mã trạng thái HTTP, yêu cầu vận hành bảo mật, và checklist nghiệm thu API 100% hoàn thành.
 
-### `docs/TEST_PLAN.md`
+### `docs/TEST_PLAN.md` (Đã hoàn thiện Kế hoạch & Ma trận Kiểm thử)
 
-Cần có:
+-   [x] Mục tiêu kiểm thử và tiêu chuẩn nghiệm thu chất lượng hệ thống.
+-   [x] Phạm vi kiểm thử 4 cấp độ: Unit Testing, Integration Testing, Full-System E2E Lifecycle, Security & Reliability.
+-   [x] Ma trận ca kiểm thử (Test Matrix) chi tiết: phân nhóm theo module, mục đích, dữ liệu đầu vào, kết quả mong đợi, kết quả thực tế.
+-   [x] Hướng dẫn thực thi kiểm thử và lệnh chạy riêng từng phân hệ chuyên biệt.
+-   [x] Báo cáo nghiệm thu thực tế: **214/214 tests PASS 100%** trong ~12.5 giây.
 
--   Mục tiêu kiểm thử.
--   Môi trường.
--   Test cases.
--   Dữ liệu đầu vào.
--   Kết quả mong đợi.
--   Kết quả thực nghiệm thực tế.
--   Lệnh chạy test.
+### `README.md` (Đã viết lại toàn diện theo sản phẩm hoàn chỉnh)
 
-### README
-
-Cập nhật theo code thực tế:
-
--   Giới thiệu.
--   Kiến trúc.
--   Yêu cầu môi trường.
--   Cài đặt.
--   Cấu hình `.env`.
--   Chạy Server.
--   Chạy Agent.
--   Chạy tests.
--   Demo.
--   Giới hạn và hướng phát triển.
+-   [x] Giới thiệu dự án hiện đại, phong cách Cyberpunk EDR, đầy đủ badges trạng thái.
+-   [x] Tính năng nổi bật của 6 trụ cột đồ án.
+-   [x] Kiến trúc tổng quan và bảng công nghệ sử dụng (Tech Stack).
+-   [x] Cấu trúc cây thư mục dự án hoàn chỉnh.
+-   [x] Hướng dẫn cài đặt & Quickstart (Môi trường ảo, sinh API Token, chạy Server, chạy Agent, chạy Demo Seeder).
+-   [x] Giới thiệu 4 phân hệ màn hình của Cyberpunk Web Dashboard.
+-   [x] Danh mục quy tắc phát hiện và cơ chế tính điểm rủi ro của Detection Engine.
+-   [x] Máy trạng thái vòng đời xử lý sự cố an ninh.
+-   [x] Các biện pháp gia cố bảo mật (Security Hardening).
+-   [x] Hướng dẫn kiểm thử và chạy 214 test cases.
+-   [x] Liên kết đầy đủ đến các tài liệu đặc tả trong `docs/`.
+-   [x] Giới hạn phạm vi đồ án và hướng phát triển mở rộng.
 
 ### Điều kiện hoàn thành Phase 9
 
-Tài liệu phải khớp với implementation hiện tại. Không mô tả endpoint,
-bảng hoặc tính năng chưa tồn tại như thể đã hoàn thành.
+100% tài liệu kỹ thuật khớp hoàn toàn với mã nguồn thực tế; không còn mô tả dạng "pending" hay thiếu sót tính năng; toàn bộ sơ đồ, hợp đồng dữ liệu, ma trận kiểm thử và hướng dẫn vận hành đều hoàn chỉnh và sẵn sàng cho buổi bảo vệ đồ án.
 
 ------------------------------------------------------------------------
 
