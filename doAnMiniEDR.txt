@@ -1,0 +1,7 @@
+Đề tài : Xây dựng hệ thống giám sát và phát hiện hành vi đáng ngờ trên máy tính đầu cuối (Mini Endpoint Detection and Response)Nội dung triển khai là:
+-Quản lý máy tính đầu cuối: Theo dõi hostname, địa chỉ IP, hệ điều hành, trạng thái hoạt động, mức sử dụng CPU, RAM và dung lượng ổ đĩa.
+-Giám sát tiến trình: Thu thập PID, tên tiến trình, tài khoản chạy và mức sử dụng tài nguyên; phát hiện tiến trình vượt ngưỡng hoặc chạy từ vị trí có rủi ro theo quy tắc cấu hình.
+-Giám sát tính toàn vẹn tệp: Sử dụng mã băm SHA-256 để phát hiện tệp bị sửa đổi, xóa hoặc xuất hiện mới trong các thư mục được bảo vệ.
+-Phát hiện hành vi đáng ngờ: Phát hiện các tiến trình hoặc thay đổi tệp vi phạm quy tắc; kết hợp nhiều dấu hiệu để đánh giá mức độ rủi ro.
+-Cảnh báo và quản lý sự cố: Hiển thị cảnh báo theo mức độ nghiêm trọng, cho phép quản trị viên xác nhận, bỏ qua hoặc đánh dấu đã xử lý.
+-Thống kê và báo cáo: Tra cứu lịch sử tiến trình, thay đổi tệp và sự kiện bảo mật; thống kê cảnh báo và xuất báo cáo

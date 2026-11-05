@@ -42,3 +42,4 @@ Thumbs.db
 # Local artifacts
 *.log
 *.pid
+/backups/

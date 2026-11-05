@@ -88,82 +88,15 @@ def init_db(database_path=None):
 
 def upsert_endpoint(endpoint, database_path=None):
     """Insert an endpoint or refresh its existing record by agent_id."""
-    with closing(get_connection(database_path)) as connection:
-        with connection:
-            connection.execute("""
-                INSERT INTO endpoints (
-                    agent_id,
-                    hostname,
-                    ip_address,
-                    os,
-                    agent_version,
-                    status,
-                    cpu_percent,
-                    memory_percent,
-                    disk_percent,
-                    uptime_seconds,
-                    last_seen
-                )
-                VALUES (
-                    :agent_id,
-                    :hostname,
-                    :ip_address,
-                    :os,
-                    :agent_version,
-                    'online',
-                    :cpu_percent,
-                    :memory_percent,
-                    :disk_percent,
-                    :uptime_seconds,
-                    :last_seen
-                )
-                ON CONFLICT(agent_id) DO UPDATE SET
-                    hostname = excluded.hostname,
-                    ip_address = excluded.ip_address,
-                    os = excluded.os,
-                    agent_version = excluded.agent_version,
-                    status = 'online',
-                    cpu_percent = excluded.cpu_percent,
-                    memory_percent = excluded.memory_percent,
-                    disk_percent = excluded.disk_percent,
-                    uptime_seconds = excluded.uptime_seconds,
-                    last_seen = excluded.last_seen
-            """, endpoint)
+    from server.repositories.endpoint_repository import EndpointRepository
 
-            row = connection.execute(
-                "SELECT * FROM endpoints WHERE agent_id = ?",
-                (endpoint["agent_id"],),
-            ).fetchone()
-            return dict(row)
+    repo = EndpointRepository(database_path)
+    return repo.upsert(endpoint)
 
 
 def list_endpoints(database_path=None, offline_after_seconds=15):
     """Return endpoints and derive Online/Offline from the last heartbeat."""
-    with closing(get_connection(database_path)) as connection:
-        with connection:
-            connection.execute("""
-                UPDATE endpoints
-                SET status = CASE
-                    WHEN (julianday('now') - julianday(last_seen)) * 86400.0 > ?
-                    THEN 'offline'
-                    ELSE 'online'
-                END
-            """, (offline_after_seconds,))
+    from server.repositories.endpoint_repository import EndpointRepository
 
-            rows = connection.execute("""
-                SELECT
-                    agent_id,
-                    hostname,
-                    ip_address,
-                    os,
-                    agent_version,
-                    status,
-                    cpu_percent,
-                    memory_percent,
-                    disk_percent,
-                    uptime_seconds,
-                    last_seen
-                FROM endpoints
-                ORDER BY hostname COLLATE NOCASE, agent_id
-            """).fetchall()
-            return [dict(row) for row in rows]
+    repo = EndpointRepository(database_path)
+    return repo.list_all(offline_after_seconds=offline_after_seconds)
