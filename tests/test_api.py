@@ -241,3 +241,26 @@ def test_database_uses_wal_mode(app):
         journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
 
     assert journal_mode.lower() == "wal"
+
+
+def test_heartbeat_reactivates_endpoint_after_offline_state(client, app):
+    post_heartbeat(client)
+    with closing(get_connection(app.config["TEST_DATABASE_PATH"])) as connection:
+        with connection:
+            connection.execute(
+                "UPDATE endpoints SET last_seen = ? WHERE agent_id = ?",
+                ("2000-01-01T00:00:00+00:00", "lab-linux-01"),
+            )
+
+    offline_response = client.get(
+        "/api/v1/endpoints", headers=auth_headers()
+    )
+    assert offline_response.get_json()["endpoints"][0]["status"] == "offline"
+
+    heartbeat_response = post_heartbeat(client)
+    assert heartbeat_response.status_code == 200
+
+    online_response = client.get(
+        "/api/v1/endpoints", headers=auth_headers()
+    )
+    assert online_response.get_json()["endpoints"][0]["status"] == "online"
