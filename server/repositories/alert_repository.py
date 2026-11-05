@@ -133,9 +133,10 @@ class AlertRepository(BaseRepository):
         severity: Optional[str] = None,
         agent_id: Optional[str] = None,
         limit: int = 100,
+        offset: int = 0,
         connection: Optional[sqlite3.Connection] = None,
     ) -> List[Dict[str, Any]]:
-        """List alerts with optional status, severity, and agent filters."""
+        """List alerts with optional status, severity, agent filters, limit, and offset."""
         conditions = []
         params = []
         if status:
@@ -153,9 +154,9 @@ class AlertRepository(BaseRepository):
             SELECT * FROM alerts
             {where_clause}
             ORDER BY last_seen_at DESC, id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
         """
-        params.append(limit)
+        params.extend([max(1, int(limit)), max(0, int(offset))])
 
         with self._connection(connection) as conn:
             cursor = conn.execute(sql, tuple(params))

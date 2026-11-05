@@ -11,6 +11,7 @@ and supports both continuous daemon mode and single-cycle execution (--once).
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ import socket
 import sys
 import time
 from typing import Any, Dict, List, Optional
+import uuid
 
 # Ensure project root is available in sys.path when executed directly as script
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -176,6 +178,32 @@ class AgentOrchestrator:
                 self.last_heartbeat_at = now
                 summary["heartbeat_sent"] = True
                 logger.info("Heartbeat transmitted successfully for agent '%s'", self.config.agent_id)
+
+                # Send system telemetry metrics
+                try:
+                    if hasattr(self.system_collector, "collect_telemetry_envelope"):
+                        telemetry_env = self.system_collector.collect_telemetry_envelope()
+                    elif hasattr(self.system_collector, "collect_metrics"):
+                        raw_metrics = self.system_collector.collect_metrics()
+                        if isinstance(raw_metrics, dict) and "cpu_percent" in raw_metrics:
+                            telemetry_env = {
+                                "schema_version": "1.0",
+                                "message_id": str(uuid.uuid4()),
+                                "agent_id": self.config.agent_id,
+                                "collected_at": datetime.now(timezone.utc).isoformat(),
+                                "payload": raw_metrics,
+                            }
+                        else:
+                            telemetry_env = None
+                    else:
+                        telemetry_env = None
+
+                    if telemetry_env:
+                        self.client.send_system_telemetry(telemetry_env)
+                        summary["telemetry_sent"] = True
+                        logger.info("System telemetry transmitted successfully for agent '%s'", self.config.agent_id)
+                except Exception as t_exc:
+                    logger.warning("System telemetry error: %s", t_exc)
             except Exception as exc:
                 err_msg = f"Heartbeat error: {exc}"
                 logger.warning(err_msg)
