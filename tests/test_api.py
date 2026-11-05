@@ -1,3 +1,5 @@
+from contextlib import closing
+
 import pytest
 
 from server.app import create_app
@@ -47,10 +49,11 @@ def sample_heartbeat(**overrides):
 
 
 def post_heartbeat(client, payload=None, headers=None):
+    request_headers = auth_headers() if headers is None else headers
     return client.post(
         "/api/v1/heartbeat",
         json=payload if payload is not None else sample_heartbeat(),
-        headers=headers or auth_headers(),
+        headers=request_headers,
     )
 
 
@@ -83,7 +86,7 @@ def test_heartbeat_accepts_valid_payload_and_persists_endpoint(client, app):
     assert body["agent_id"] == "lab-linux-01"
     assert body["server_time"]
 
-    with get_connection(app.config["TEST_DATABASE_PATH"]) as connection:
+    with closing(get_connection(app.config["TEST_DATABASE_PATH"])) as connection:
         row = connection.execute(
             "SELECT * FROM endpoints WHERE agent_id = ?",
             ("lab-linux-01",),
@@ -103,7 +106,7 @@ def test_heartbeat_upserts_existing_agent_instead_of_duplicating(client, app):
     assert first.status_code == 200
     assert second.status_code == 200
 
-    with get_connection(app.config["TEST_DATABASE_PATH"]) as connection:
+    with closing(get_connection(app.config["TEST_DATABASE_PATH"])) as connection:
         count = connection.execute("SELECT COUNT(*) FROM endpoints").fetchone()[0]
         row = connection.execute(
             "SELECT hostname FROM endpoints WHERE agent_id = ?",
@@ -209,11 +212,12 @@ def test_endpoints_returns_saved_endpoint(client):
 
 def test_endpoints_marks_stale_heartbeat_as_offline(client, app):
     post_heartbeat(client)
-    with get_connection(app.config["TEST_DATABASE_PATH"]) as connection:
-        connection.execute(
-            "UPDATE endpoints SET last_seen = ? WHERE agent_id = ?",
-            ("2000-01-01T00:00:00+00:00", "lab-linux-01"),
-        )
+    with closing(get_connection(app.config["TEST_DATABASE_PATH"])) as connection:
+        with connection:
+            connection.execute(
+                "UPDATE endpoints SET last_seen = ? WHERE agent_id = ?",
+                ("2000-01-01T00:00:00+00:00", "lab-linux-01"),
+            )
 
     response = client.get("/api/v1/endpoints", headers=auth_headers())
 
@@ -233,7 +237,7 @@ def test_heartbeat_rejects_request_larger_than_configured_limit(client):
 
 
 def test_database_uses_wal_mode(app):
-    with get_connection(app.config["TEST_DATABASE_PATH"]) as connection:
+    with closing(get_connection(app.config["TEST_DATABASE_PATH"])) as connection:
         journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
 
     assert journal_mode.lower() == "wal"
