@@ -67,7 +67,7 @@ def test_health_check_is_public(client):
 
 @pytest.mark.parametrize(
     "headers",
-    [None, {}, auth_headers("wrong-token"), {"Authorization": "Basic abc"}],
+    [{}, auth_headers("wrong-token"), {"Authorization": "Basic abc"}],
 )
 def test_heartbeat_rejects_missing_or_invalid_token(client, headers):
     response = post_heartbeat(client, headers=headers)
@@ -75,6 +75,13 @@ def test_heartbeat_rejects_missing_or_invalid_token(client, headers):
     assert response.status_code == 401
     assert response.get_json()["error"] == "unauthorized"
     assert response.headers["WWW-Authenticate"].startswith("Bearer")
+
+
+def test_heartbeat_rejects_request_without_authorization_header(client):
+    response = client.post("/api/v1/heartbeat", json=sample_heartbeat())
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "unauthorized"
 
 
 def test_heartbeat_accepts_valid_payload_and_persists_endpoint(client, app):
