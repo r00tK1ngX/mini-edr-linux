@@ -482,7 +482,7 @@ Kiểm thử đã đạt:
 
 ## Phase 3 --- Xây dựng Linux Agent
 
-**Trạng thái: Đang triển khai (Đã hoàn thành Module 1).**
+**Trạng thái: Đã hoàn thành 100% (Đạt toàn bộ tiêu chí nghiệm thu Module 1 đến Module 5).**
 
 ### Mục tiêu
 
@@ -563,41 +563,27 @@ Chức năng đã xây dựng:
 
 ### Module 5 --- `agent/main.py`
 
-Agent Orchestrator điều phối collector và client.
+**Đã hoàn thành và có 6 unit tests vượt qua (`tests/test_agent_orchestrator.py`).**
 
-``` text
-START AGENT
-    |
-    v
-COLLECT SYSTEM INFO
-    |
-    v
-COLLECT PROCESS INFO
-    |
-    v
-SCAN PROTECTED FILES
-    |
-    v
-SEND DATA TO SERVER
-    |
-    v
-WAIT / SLEEP
-    |
-    v
-REPEAT
-```
+Chức năng đã xây dựng:
 
-Ban đầu có thể dùng chu kỳ 5 giây để demo. Sau đó tách chu kỳ heartbeat,
-process scan và FIM để tránh quét file quá thường xuyên.
+-   Lớp `AgentConfig`: Quản lý cấu hình, tự động đọc biến môi trường và file `.env` (`EDR_AGENT_ID`, `EDR_SERVER_URL`, `EDR_API_TOKEN`, `EDR_HEARTBEAT_INTERVAL`, `EDR_PROCESS_SCAN_INTERVAL`, `EDR_FIM_SCAN_INTERVAL`, `EDR_MONITORED_PATHS`).
+-   Lớp điều phối `AgentOrchestrator`:
+    -   Điều phối độc lập 3 luồng chu kỳ (Heartbeat, Process Scan, FIM Scan).
+    -   Khởi tạo và đồng bộ baseline FIM ở chu kỳ đầu, sau đó theo dõi phát hiện thay đổi và gửi security events.
+    -   Hỗ trợ `run_single_cycle()` độc lập, hỗ trợ cờ `force_all` cho phép chạy đơn lẻ hoặc chạy lặp lại liên tục.
+    -   Xử lý tín hiệu ngắt `SIGINT` (Ctrl+C) và `SIGTERM` đảm bảo Agent dừng an toàn mà không làm hỏng tài nguyên (Graceful shutdown).
+    -   Bắt ngoại lệ cấp độ chu kỳ, đảm bảo một lỗi mạng tạm thời hoặc một task collector không làm sập tiến trình daemon của Agent.
+-   CLI Entrypoint: Hỗ trợ các tham số dòng lệnh `--once` (chạy 1 chu kỳ rồi thoát), `--debug` (bật log chi tiết), `--server` và `--agent-id`.
 
 ### Điều kiện hoàn thành Phase 3
 
--   Agent chạy ổn định trên Linux.
--   Collector trả dữ liệu hợp lệ.
--   Lỗi permission/process không làm Agent crash.
--   Có unit tests.
--   Dữ liệu có thể serialize theo Data Contract.
--   Agent không làm lộ token hoặc dữ liệu nhạy cảm.
+-   [x] Agent chạy ổn định trên Linux (môi trường Kali Linux).
+-   [x] Collector trả dữ liệu hợp lệ (System, Process, FIM).
+-   [x] Lỗi permission/process không làm Agent crash.
+-   [x] Có unit tests đầy đủ (52 tests cho Agent, tổng toàn bộ dự án đạt 111 tests).
+-   [x] Dữ liệu serialize chuẩn theo Data Contract.
+-   [x] Agent không làm lộ token hoặc dữ liệu nhạy cảm trong logs.
 
 ------------------------------------------------------------------------
 

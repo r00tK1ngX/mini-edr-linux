@@ -16,6 +16,10 @@ from agent.file_integrity import (
     inspect_file,
     scan_monitored_paths,
 )
+from agent.main import (
+    AgentConfig,
+    AgentOrchestrator,
+)
 from agent.process_collector import (
     ProcessCollector,
     collect_process_snapshot,
@@ -39,7 +43,9 @@ __all__ = [
     "AgentAuthenticationError",
     "AgentClient",
     "AgentClientError",
+    "AgentConfig",
     "AgentConnectionError",
+    "AgentOrchestrator",
     "AgentRequestError",
     "FileIntegrityMonitor",
     "ProcessCollector",
