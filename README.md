@@ -237,6 +237,21 @@ Agent sẽ lập tức:
 2. Quét toàn bộ bảng tiến trình `/proc` và gửi Process Snapshot.
 3. Thiết lập baseline FIM ban đầu và theo dõi thay đổi tệp tin.
 
+### 5.6. Chạy Kịch bản Tấn công Demo Trực tiếp (Live Attack Simulation)
+
+Để thực hiện kịch bản demo 5--7 phút phục vụ buổi bảo vệ đồ án:
+
+```bash
+python3 scripts/simulate_attack_scenario.py
+```
+
+Công cụ CLI tương tác sẽ dẫn dắt từng bước:
+1. Đăng ký máy trạm demo (`demo-workstation-01`).
+2. Thiết lập FIM baseline cho tệp cấu hình.
+3. Kích hoạt tấn công sửa đổi tệp (FIM Tampering Attack) ➔ Kích hoạt Alert `HIGH`.
+4. Kích hoạt tấn công Reverse Shell Netcat (`/tmp/nc -lvnp 4444`) ➔ Kích hoạt Alert `CRITICAL` (Risk Score 90).
+5. Mở Web Dashboard `/alerts` để trình diễn quy trình SOC Triage (Evidence ➔ Acknowledge ➔ Resolve).
+
 ---
 
 ## 6. Giao diện Cyberpunk Web Dashboard
@@ -360,6 +375,8 @@ Dự án cung cấp bộ tài liệu kiến trúc và đặc tả chi tiết tro
 - 📜 **[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md):** Đặc tả Common Telemetry Envelope 1.0, cấu trúc payload từng loại telemetry, timestamp ownership, và validator bounds.
 - 📡 **[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md):** Chi tiết toàn bộ REST APIs, HTTP status codes, mã lỗi, và các route của Web Dashboard.
 - 🧪 **[docs/TEST_PLAN.md](docs/TEST_PLAN.md):** Kế hoạch kiểm thử, phạm vi, kịch bản chi tiết và ma trận nghiệm thu 214 test cases.
+- 📊 **[docs/PRESENTATION_SLIDES_OUTLINE.md](docs/PRESENTATION_SLIDES_OUTLINE.md):** Cấu trúc 18 slide thuyết trình bảo vệ đồ án chi tiết, kèm bố cục hình ảnh, lời thoại thuyết minh (speaker notes) và câu hỏi phản biện.
+- 🎬 **[docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md):** Kịch bản trình diễn sản phẩm 5--7 phút cho buổi bảo vệ đồ án, checklist chuẩn bị và hướng dẫn video dự phòng.
 - 🗺️ **[Lo_trinh_trien_khai_Mini_EDR_Linux.md](Lo_trinh_trien_khai_Mini_EDR_Linux.md):** Lộ trình 10 giai đoạn phát triển và nghiệm thu đề tài.
 
 ---
