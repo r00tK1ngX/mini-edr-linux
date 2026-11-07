@@ -1,7 +1,12 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import sqlite3
 
 from server.repositories.base import BaseRepository
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class EndpointRepository(BaseRepository):
@@ -12,7 +17,7 @@ class EndpointRepository(BaseRepository):
         endpoint: Dict[str, Any],
         connection: Optional[sqlite3.Connection] = None,
     ) -> Dict[str, Any]:
-        """Insert or update an endpoint record."""
+        """Insert or update an endpoint record with robust partial-update semantics."""
         sql = """
             INSERT INTO endpoints (
                 agent_id,
@@ -29,9 +34,9 @@ class EndpointRepository(BaseRepository):
             )
             VALUES (
                 :agent_id,
-                :hostname,
+                COALESCE(:hostname, 'unknown'),
                 :ip_address,
-                :os,
+                COALESCE(:os, 'unknown'),
                 :agent_version,
                 'online',
                 :cpu_percent,
@@ -41,41 +46,42 @@ class EndpointRepository(BaseRepository):
                 :last_seen
             )
             ON CONFLICT(agent_id) DO UPDATE SET
-                hostname = COALESCE(excluded.hostname, endpoints.hostname),
+                hostname = COALESCE(NULLIF(excluded.hostname, 'unknown'), endpoints.hostname),
                 ip_address = COALESCE(excluded.ip_address, endpoints.ip_address),
-                os = COALESCE(excluded.os, endpoints.os),
+                os = COALESCE(NULLIF(excluded.os, 'unknown'), endpoints.os),
                 agent_version = COALESCE(excluded.agent_version, endpoints.agent_version),
                 status = 'online',
                 cpu_percent = COALESCE(excluded.cpu_percent, endpoints.cpu_percent),
                 memory_percent = COALESCE(excluded.memory_percent, endpoints.memory_percent),
                 disk_percent = COALESCE(excluded.disk_percent, endpoints.disk_percent),
                 uptime_seconds = COALESCE(excluded.uptime_seconds, endpoints.uptime_seconds),
-                last_seen = excluded.last_seen
+                last_seen = COALESCE(excluded.last_seen, endpoints.last_seen)
             RETURNING *;
         """
         params = {
             "agent_id": endpoint["agent_id"],
-            "hostname": endpoint["hostname"],
+            "hostname": endpoint.get("hostname"),
             "ip_address": endpoint.get("ip_address"),
-            "os": endpoint["os"],
+            "os": endpoint.get("os"),
             "agent_version": endpoint.get("agent_version"),
             "cpu_percent": endpoint.get("cpu_percent"),
             "memory_percent": endpoint.get("memory_percent"),
             "disk_percent": endpoint.get("disk_percent"),
             "uptime_seconds": endpoint.get("uptime_seconds"),
-            "last_seen": endpoint["last_seen"],
+            "last_seen": endpoint.get("last_seen", _utc_now()),
         }
         with self._connection(connection) as conn:
-            cursor = conn.execute(sql, params)
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            # Fallback if RETURNING not supported or empty
-            select_cur = conn.execute(
-                "SELECT * FROM endpoints WHERE agent_id = ?",
-                (endpoint["agent_id"],),
-            )
-            return dict(select_cur.fetchone())
+            with conn:
+                cursor = conn.execute(sql, params)
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                # Fallback if RETURNING not supported or empty
+                select_cur = conn.execute(
+                    "SELECT * FROM endpoints WHERE agent_id = ?",
+                    (endpoint["agent_id"],),
+                )
+                return dict(select_cur.fetchone())
 
     def get_by_id(
         self,

@@ -138,8 +138,9 @@ class BaselineRepository(BaseRepository):
             for b in baselines
         ]
         with self._connection(connection) as conn:
-            conn.executemany(sql, formatted)
-            return len(formatted)
+            with conn:
+                conn.executemany(sql, formatted)
+                return len(formatted)
 
     def get_by_path(
         self,

@@ -504,16 +504,22 @@ def test_endpoint_cannot_be_deleted_while_history_exists(database_path):
 
 
 def test_migration_is_recorded_once(database_path):
+    # Running init_db again should be idempotent and not duplicate migration records
+    init_db(database_path)
     with closing(sqlite3.connect(database_path)) as connection:
         rows = connection.execute("""
             SELECT version, checksum_sha256, applied_at
             FROM schema_migrations
+            ORDER BY version ASC
         """).fetchall()
 
-    assert len(rows) == 1
+    assert len(rows) == 2
     assert rows[0][0] == "001_phase2_data_model"
     assert len(rows[0][1]) == 64
     assert rows[0][2]
+    assert rows[1][0] == "002_add_payload_hash"
+    assert len(rows[1][1]) == 64
+    assert rows[1][2]
 
 
 def test_database_integrity_and_foreign_keys(database_path):

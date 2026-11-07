@@ -50,15 +50,16 @@ class MetricsRepository(BaseRepository):
             "received_at": metric["received_at"],
         }
         with self._connection(connection) as conn:
-            cursor = conn.execute(sql, params)
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            select_cur = conn.execute(
-                "SELECT * FROM system_metrics WHERE message_id = ?",
-                (metric["message_id"],),
-            )
-            return dict(select_cur.fetchone())
+            with conn:
+                cursor = conn.execute(sql, params)
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                select_cur = conn.execute(
+                    "SELECT * FROM system_metrics WHERE message_id = ?",
+                    (metric["message_id"],),
+                )
+                return dict(select_cur.fetchone())
 
     def get_by_id(
         self,

@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+import hashlib
 from hmac import compare_digest
 from ipaddress import ip_address as parse_ip_address
+import json
 from math import isfinite
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
 from flask import Blueprint, current_app, jsonify, request
@@ -88,6 +90,12 @@ def is_valid_sha256(val: Any) -> bool:
     if not isinstance(val, str) or len(val) != 64:
         return False
     return all(c in "0123456789abcdefABCDEF" for c in val)
+
+
+def _compute_canonical_payload_hash(data: Any) -> str:
+    """Compute SHA-256 hash of canonical JSON (sorted keys, compact separators)."""
+    canonical_json = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 def _error(message: str, status_code: int = 400):
@@ -410,14 +418,43 @@ def ingest_process_telemetry():
 
     proc_repo = ProcessRepository(db_path)
     message_id = envelope["message_id"].strip()
+    payload_hash = _compute_canonical_payload_hash(payload)
 
-    # Idempotency check
+    # Idempotency check via Message ID and Canonical Payload Hash (SHA-256)
     existing = proc_repo.get_snapshot_by_message_id(message_id)
     if existing:
-        is_same = (
-            existing["agent_id"] == agent_id
-            and existing["process_count"] == process_count
-        )
+        existing_hash = existing.get("payload_hash")
+        if existing_hash:
+            is_same = (existing["agent_id"] == agent_id and existing_hash == payload_hash)
+        else:
+            # Fallback for legacy snapshots without stored payload_hash
+            existing_obs = proc_repo.list_observations(existing["id"])
+            legacy_hash = _compute_canonical_payload_hash({
+                "process_count": existing["process_count"],
+                "processes": [
+                    {
+                        "pid": o["pid"],
+                        "ppid": o.get("ppid"),
+                        "process_name": o["process_name"],
+                        "username": o.get("username"),
+                        "exe_path": o.get("exe_path"),
+                        "cpu_percent": o.get("cpu_percent"),
+                        "memory_percent": o.get("memory_percent"),
+                        "rss_bytes": o.get("rss_bytes"),
+                        "process_started_at": o.get("process_started_at"),
+                    }
+                    for o in existing_obs
+                ],
+            })
+            cleaned_hash = _compute_canonical_payload_hash({
+                "process_count": process_count,
+                "processes": cleaned_processes,
+            })
+            is_same = (
+                existing["agent_id"] == agent_id
+                and (legacy_hash == cleaned_hash or (existing["process_count"] == process_count and not existing_obs))
+            )
+
         if is_same:
             return jsonify({
                 "success": True,
@@ -435,6 +472,7 @@ def ingest_process_telemetry():
         "process_count": process_count,
         "collected_at": envelope["collected_at"],
         "received_at": received_at,
+        "payload_hash": payload_hash,
     }
 
     try:
@@ -463,6 +501,7 @@ def ingest_process_telemetry():
 
 
 @api_bp.post("/file-baselines")
+@api_bp.post("/fim/baselines")
 def sync_file_baselines():
     """Synchronize file integrity baselines."""
     envelope, err = _validate_envelope(request)
@@ -528,15 +567,21 @@ def sync_file_baselines():
     baseline_repo = BaselineRepository(db_path)
     now = utc_now()
 
-    # Determine created vs updated
+    # Determine created vs updated using chunked parameter query
     try:
+        existing_paths = set()
+        chunk_size = 500
+        file_paths = [f["file_path"] for f in cleaned_files]
         with get_connection(db_path) as conn:
-            placeholders = ",".join("?" for _ in cleaned_files)
-            rows = conn.execute(
-                f"SELECT file_path FROM file_baselines WHERE agent_id = ? AND file_path IN ({placeholders})",
-                (agent_id, *[f["file_path"] for f in cleaned_files]),
-            ).fetchall()
-            existing_paths = {row["file_path"] for row in rows}
+            for i in range(0, len(file_paths), chunk_size):
+                chunk = file_paths[i:i + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT file_path FROM file_baselines WHERE agent_id = ? AND file_path IN ({placeholders})",
+                    (agent_id, *chunk),
+                ).fetchall()
+                for row in rows:
+                    existing_paths.add(row["file_path"])
 
         created = len(cleaned_files) - len(existing_paths)
         updated = len(existing_paths)
@@ -600,13 +645,37 @@ def ingest_security_event():
     event_repo = EventRepository(db_path)
     message_id = envelope["message_id"].strip()
 
-    # Idempotency check
+    # Idempotency check via Message ID and Canonical Payload Hash
     existing = event_repo.get_by_message_id(message_id)
     if existing:
+        existing_evidence = existing.get("evidence_json", "{}")
+        if isinstance(existing_evidence, str):
+            try:
+                existing_evidence = json.loads(existing_evidence)
+            except Exception:
+                existing_evidence = {}
+
+        existing_payload_rep = {
+            "event_type": existing["event_type"],
+            "severity": existing["severity"],
+            "title": existing["title"],
+            "description": existing.get("description"),
+            "evidence": existing_evidence,
+            "occurred_at": existing["occurred_at"],
+            "fingerprint": existing.get("fingerprint"),
+        }
+        current_payload_rep = {
+            "event_type": event_type.strip(),
+            "severity": severity,
+            "title": title.strip(),
+            "description": payload.get("description"),
+            "evidence": evidence,
+            "occurred_at": occurred_at,
+            "fingerprint": payload.get("fingerprint"),
+        }
         is_same = (
             existing["agent_id"] == agent_id
-            and existing["event_type"] == event_type.strip()
-            and existing["title"] == title.strip()
+            and _compute_canonical_payload_hash(existing_payload_rep) == _compute_canonical_payload_hash(current_payload_rep)
         )
         if is_same:
             return jsonify({

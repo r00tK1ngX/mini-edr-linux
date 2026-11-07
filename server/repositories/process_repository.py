@@ -21,6 +21,27 @@ class ProcessRepository(BaseRepository):
                 agent_id,
                 process_count,
                 collected_at,
+                received_at,
+                payload_hash
+            )
+            VALUES (
+                :message_id,
+                :schema_version,
+                :agent_id,
+                :process_count,
+                :collected_at,
+                :received_at,
+                :payload_hash
+            )
+            RETURNING *;
+        """
+        snapshot_sql_fallback = """
+            INSERT INTO process_snapshots (
+                message_id,
+                schema_version,
+                agent_id,
+                process_count,
+                collected_at,
                 received_at
             )
             VALUES (
@@ -66,41 +87,49 @@ class ProcessRepository(BaseRepository):
             "process_count": snapshot.get("process_count", len(observations)),
             "collected_at": snapshot["collected_at"],
             "received_at": snapshot["received_at"],
+            "payload_hash": snapshot.get("payload_hash"),
         }
 
         with self._connection(connection) as conn:
-            snap_cur = conn.execute(snapshot_sql, snapshot_params)
-            snap_row = snap_cur.fetchone()
-            if snap_row:
-                created_snapshot = dict(snap_row)
-            else:
-                sel_cur = conn.execute(
-                    "SELECT * FROM process_snapshots WHERE message_id = ?",
-                    (snapshot["message_id"],),
-                )
-                created_snapshot = dict(sel_cur.fetchone())
+            with conn:
+                try:
+                    snap_cur = conn.execute(snapshot_sql, snapshot_params)
+                except sqlite3.OperationalError:
+                    fallback_params = dict(snapshot_params)
+                    fallback_params.pop("payload_hash", None)
+                    snap_cur = conn.execute(snapshot_sql_fallback, fallback_params)
 
-            snapshot_id = created_snapshot["id"]
+                snap_row = snap_cur.fetchone()
+                if snap_row:
+                    created_snapshot = dict(snap_row)
+                else:
+                    sel_cur = conn.execute(
+                        "SELECT * FROM process_snapshots WHERE message_id = ?",
+                        (snapshot["message_id"],),
+                    )
+                    created_snapshot = dict(sel_cur.fetchone())
 
-            if observations:
-                formatted_obs = [
-                    {
-                        "snapshot_id": snapshot_id,
-                        "pid": obs["pid"],
-                        "ppid": obs.get("ppid"),
-                        "process_name": obs["process_name"],
-                        "username": obs.get("username"),
-                        "exe_path": obs.get("exe_path"),
-                        "cpu_percent": obs.get("cpu_percent"),
-                        "memory_percent": obs.get("memory_percent"),
-                        "rss_bytes": obs.get("rss_bytes"),
-                        "process_started_at": obs.get("process_started_at"),
-                    }
-                    for obs in observations
-                ]
-                conn.executemany(observation_sql, formatted_obs)
+                snapshot_id = created_snapshot["id"]
 
-            return created_snapshot
+                if observations:
+                    formatted_obs = [
+                        {
+                            "snapshot_id": snapshot_id,
+                            "pid": obs["pid"],
+                            "ppid": obs.get("ppid"),
+                            "process_name": obs["process_name"],
+                            "username": obs.get("username"),
+                            "exe_path": obs.get("exe_path"),
+                            "cpu_percent": obs.get("cpu_percent"),
+                            "memory_percent": obs.get("memory_percent"),
+                            "rss_bytes": obs.get("rss_bytes"),
+                            "process_started_at": obs.get("process_started_at"),
+                        }
+                        for obs in observations
+                    ]
+                    conn.executemany(observation_sql, formatted_obs)
+
+                return created_snapshot
 
     def get_snapshot_by_id(
         self,
