@@ -40,6 +40,7 @@
 
     <form method="POST" action="{{ url_for('web.login') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url or '' }}">
       <div style="margin-bottom: 1.5rem;">
         <label for="token" style="display: block; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem;">
           OPERATOR ACCESS TOKEN (EDR_API_TOKEN):

@@ -20,6 +20,30 @@ def _resolve_database_path(value: str) -> str:
     return str(path.resolve())
 
 
+def _resolve_secret_key(project_root: Path) -> str:
+    """Retrieve or persist a stable SECRET_KEY to prevent session invalidation across reboots."""
+    env_secret = os.getenv("SECRET_KEY")
+    if env_secret and env_secret.strip():
+        return env_secret.strip()
+
+    key_file = project_root / "data" / ".secret_key"
+    try:
+        if key_file.is_file():
+            content = key_file.read_text(encoding="utf-8").strip()
+            if content:
+                return content
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        new_key = secrets.token_hex(32)
+        key_file.write_text(new_key, encoding="utf-8")
+        try:
+            key_file.chmod(0o600)
+        except OSError:
+            pass
+        return new_key
+    except Exception:
+        return secrets.token_hex(32)
+
+
 def create_app(test_config=None):
     """Application factory used by both the server and pytest."""
     load_dotenv()
@@ -35,11 +59,15 @@ def create_app(test_config=None):
     )
 
     app.config.from_mapping(
-        SECRET_KEY=os.getenv("SECRET_KEY", secrets.token_hex(32)),
+        SECRET_KEY=_resolve_secret_key(PROJECT_ROOT),
         EDR_API_TOKEN=os.getenv("EDR_API_TOKEN"),
         DATABASE_PATH=_resolve_database_path(default_database_path),
         OFFLINE_AFTER_SECONDS=int(os.getenv("EDR_OFFLINE_AFTER_SECONDS", "15")),
         MAX_CONTENT_LENGTH=int(os.getenv("EDR_MAX_CONTENT_LENGTH", str(16 * 1024 * 1024))),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("EDR_COOKIE_SECURE", "false").lower() in ("true", "1", "yes"),
+        PERMANENT_SESSION_LIFETIME=int(os.getenv("EDR_SESSION_LIFETIME_SECONDS", "3600")),
     )
 
     if test_config:

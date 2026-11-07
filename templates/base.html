@@ -59,7 +59,10 @@
         </div>
         <div class="hud-clock" id="hudClock">--:--:-- UTC</div>
         {% if is_authenticated %}
-          <a href="{{ url_for('web.logout') }}" class="btn btn-outline btn-sm" style="margin-left: 0.75rem; font-size: 0.7rem; padding: 0.25rem 0.5rem;" title="Terminate SOC Session">LOGOUT</a>
+          <form method="POST" action="{{ url_for('web.logout') }}" style="display: inline; margin: 0; padding: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline btn-sm" style="margin-left: 0.75rem; font-size: 0.7rem; padding: 0.25rem 0.5rem;" title="Terminate SOC Session">LOGOUT</button>
+          </form>
         {% endif %}
       </div>
     </div>

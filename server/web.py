@@ -18,6 +18,7 @@ import hmac
 import json
 import secrets
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
@@ -44,6 +45,29 @@ web_bp = Blueprint("web", __name__)
 # -----------------------------------------------------------------------------
 # Security & CSRF Helpers
 # -----------------------------------------------------------------------------
+
+def is_safe_url(target: Optional[str]) -> bool:
+    """Validate that target URL is a safe local relative path to prevent Open Redirect attacks."""
+    if not target or not isinstance(target, str):
+        return False
+    target = target.strip()
+    if not target:
+        return False
+    # Reject backslashes to prevent bypasses like /\evil.com
+    if "\\" in target:
+        return False
+    # Must start with single slash and not protocol-relative double slash
+    if not target.startswith("/") or target.startswith("//"):
+        return False
+    try:
+        parsed = urlparse(target)
+        # Scheme and netloc must be empty for local relative paths
+        if parsed.scheme or parsed.netloc:
+            return False
+        return True
+    except Exception:
+        return False
+
 
 def get_or_create_csrf_token() -> str:
     """Generate or retrieve per-session anti-CSRF token."""
@@ -93,13 +117,11 @@ def require_operator_auth():
     if session.get("operator_authenticated"):
         return None
 
-    # Allow Bearer token in header or ?token= query parameter for lab convenience
+    # Allow Bearer token in Authorization header only (token in query string is rejected to prevent leakage)
     auth_header = request.headers.get("Authorization", "")
     token = ""
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
-    elif request.args.get("token"):
-        token = request.args.get("token").strip()
 
     expected_token = current_app.config.get("EDR_API_TOKEN")
     if token and expected_token and hmac.compare_digest(token, expected_token):
@@ -111,7 +133,8 @@ def require_operator_auth():
     if request.is_json or request.path.endswith("/telemetry") or request.path.endswith("/detail"):
         return jsonify({"success": False, "error": "Unauthorized operator session"}), 401
 
-    return redirect(url_for("web.login", next=request.path))
+    safe_next = request.path if is_safe_url(request.path) else url_for("web.dashboard")
+    return redirect(url_for("web.login", next=safe_next))
 
 
 # -----------------------------------------------------------------------------
@@ -176,29 +199,48 @@ def login():
     if session.get("operator_authenticated"):
         return redirect(url_for("web.dashboard"))
 
+    raw_next = request.form.get("next") or request.args.get("next")
+    next_url = raw_next if is_safe_url(raw_next) else url_for("web.dashboard")
     error = None
-    next_url = request.args.get("next") or url_for("web.dashboard")
 
     if request.method == "POST":
+        # Check CSRF token on login
+        if not validate_csrf():
+            return render_template(
+                "login.html",
+                error="Invalid or missing CSRF token. Request rejected.",
+                next_url=next_url,
+            ), 400
+
         token = request.form.get("token", "").strip()
         expected_token = current_app.config.get("EDR_API_TOKEN")
 
         if token and expected_token and hmac.compare_digest(token, expected_token):
             session["operator_authenticated"] = True
-            get_or_create_csrf_token()
+            session["csrf_token"] = secrets.token_hex(32)
             flash("Operator session authenticated successfully.", "success")
             return redirect(next_url)
         else:
             error = "Invalid API Access Token. Authentication rejected."
+            return render_template("login.html", error=error, next_url=next_url), 200
 
-    return render_template("login.html", error=error)
+    get_or_create_csrf_token()
+    return render_template("login.html", error=error, next_url=next_url)
 
 
-@web_bp.get("/logout")
+@web_bp.post("/logout")
 def logout():
-    """Terminate operator session."""
+    """Terminate operator session with CSRF protection."""
+    if not validate_csrf():
+        if request.is_json:
+            return jsonify({"success": False, "error": "Invalid CSRF token"}), 400
+        flash("CSRF token validation failed on logout.", "error")
+        return redirect(url_for("web.dashboard"))
+
     session.clear()
     flash("Operator session terminated.", "info")
+    if request.is_json:
+        return jsonify({"success": True, "redirect": url_for("web.login")}), 200
     return redirect(url_for("web.login"))
 
 

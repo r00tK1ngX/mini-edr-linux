@@ -435,8 +435,11 @@ def test_web_console_session_authentication(tmp_path):
     assert res_good_login.status_code == 200
     assert "SOC COMMAND CENTER" in res_good_login.get_data(as_text=True)
 
-    # 5. Logout terminates session
-    res_logout = test_client.get("/logout", follow_redirects=True)
+    # 5. Logout terminates session via POST (GET is rejected to prevent Logout CSRF)
+    res_get_logout = test_client.get("/logout")
+    assert res_get_logout.status_code == 405
+
+    res_logout = test_client.post("/logout", follow_redirects=True)
     assert res_logout.status_code == 200
     assert "terminated" in res_logout.get_data(as_text=True)
 

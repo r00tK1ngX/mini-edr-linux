@@ -62,19 +62,27 @@ function getCsrfToken() {
   return meta ? meta.getAttribute("content") : "";
 }
 
-// Toast notification helper
+// Toast notification helper (uses DOM APIs to prevent XSS)
 function showToast(message, type = "info") {
   const container = document.getElementById("toastContainer");
   if (!container) return;
 
   const toast = document.createElement("div");
   toast.className = `cyber-toast ${type}`;
-  toast.innerHTML = `
-    <div style="font-weight: 700; text-transform: uppercase; font-size: 0.75rem; margin-bottom: 0.2rem; color: var(--neon-cyan);">
-      // SYSTEM_NOTIFICATION
-    </div>
-    <div>${escapeHtml(message)}</div>
-  `;
+
+  const header = document.createElement("div");
+  header.style.fontWeight = "700";
+  header.style.textTransform = "uppercase";
+  header.style.fontSize = "0.75rem";
+  header.style.marginBottom = "0.2rem";
+  header.style.color = "var(--neon-cyan)";
+  header.textContent = "// SYSTEM_NOTIFICATION";
+
+  const msgDiv = document.createElement("div");
+  msgDiv.textContent = String(message);
+
+  toast.appendChild(header);
+  toast.appendChild(msgDiv);
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -83,6 +91,16 @@ function showToast(message, type = "info") {
     toast.style.transform = "translateX(50px)";
     setTimeout(() => toast.remove(), 400);
   }, 4000);
+}
+
+// Render error message safely into container via DOM APIs
+function renderErrorMessage(container, message) {
+  if (!container) return;
+  container.innerHTML = "";
+  const errDiv = document.createElement("div");
+  errDiv.style.color = "var(--neon-red)";
+  errDiv.textContent = String(message);
+  container.appendChild(errDiv);
 }
 
 // Modal helper
@@ -225,7 +243,7 @@ async function viewEvidence(alertId) {
     const res = await fetch(`/alerts/${alertId}/detail`);
     const data = await res.json();
     if (!data.success) {
-      body.innerHTML = `<div style="color: var(--neon-red);">Failed to load evidence: ${data.error}</div>`;
+      renderErrorMessage(body, `Failed to load evidence: ${data.error || "Unknown error"}`);
       return;
     }
 
@@ -268,7 +286,7 @@ async function viewEvidence(alertId) {
       <div>${eventsHtml}</div>
     `;
   } catch (err) {
-    body.innerHTML = `<div style="color: var(--neon-red);">Error fetching telemetry: ${err.message}</div>`;
+    renderErrorMessage(body, `Error fetching telemetry: ${err.message}`);
   }
 }
 
@@ -286,7 +304,7 @@ async function inspectEndpoint(agentId) {
     const res = await fetch(`/endpoints/${agentId}/telemetry`);
     const data = await res.json();
     if (!data.success) {
-      body.innerHTML = `<div style="color: var(--neon-red);">Error: ${data.error}</div>`;
+      renderErrorMessage(body, `Error: ${data.error || "Unknown error"}`);
       return;
     }
 
@@ -319,7 +337,7 @@ async function inspectEndpoint(agentId) {
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">HOSTNAME</span><div style="font-weight: 700; color: #fff;">${escapeHtml(ep.hostname)}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">AGENT ID</span><div class="cyber-code">${escapeHtml(ep.agent_id)}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">IP ADDRESS</span><div>${escapeHtml(ep.ip_address)}</div></div>
-        <div><span style="color: var(--text-muted); font-size: 0.75rem;">STATUS</span><div><span class="badge badge-${ep.status}">${ep.status.toUpperCase()}</span></div></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">STATUS</span><div><span class="badge badge-${escapeHtml(ep.status)}">${escapeHtml(String(ep.status).toUpperCase())}</span></div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">CPU USAGE</span><div style="color: var(--neon-cyan); font-weight: 700;">${ep.cpu_percent ? ep.cpu_percent.toFixed(1) + '%' : 'N/A'}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">RAM USAGE</span><div style="color: var(--neon-green); font-weight: 700;">${ep.memory_percent ? ep.memory_percent.toFixed(1) + '%' : 'N/A'}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">MONITORED FILES (FIM)</span><div style="color: var(--neon-purple); font-weight: 700;">${baselinesCount} files</div></div>
@@ -346,7 +364,7 @@ async function inspectEndpoint(agentId) {
       </div>
     `;
   } catch (err) {
-    body.innerHTML = `<div style="color: var(--neon-red);">Error scanning endpoint: ${err.message}</div>`;
+    renderErrorMessage(body, `Error scanning endpoint: ${err.message}`);
   }
 }
 
@@ -364,13 +382,15 @@ function formatJsonString(val) {
 
 // Escape HTML helper
 function escapeHtml(text) {
-  if (!text) return "";
+  if (text === null || text === undefined) return "";
   const map = {
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
     "'": "&#039;",
+    "/": "&#x2F;",
+    "`": "&#x60;",
   };
-  return String(text).replace(/[&<>"']/g, m => map[m]);
+  return String(text).replace(/[&<>"'`\/]/g, m => map[m]);
 }
