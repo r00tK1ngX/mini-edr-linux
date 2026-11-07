@@ -47,11 +47,29 @@ class DetectionEngine:
         agent_id: str,
         snapshot_id: int,
         observations: List[Dict[str, Any]],
+        snapshot_time: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Evaluate a full process observation snapshot against all detection rules and correlation."""
         now = _utc_now()
+        eval_time = snapshot_time or now
         raw_detections: List[DetectionResult] = []
         created_event_ids: List[int] = []
+
+        # 0. Build PID -> process mapping and enrich parent_name if missing
+        pid_map: Dict[int, Dict[str, Any]] = {}
+        for p in observations:
+            p_pid = p.get("pid")
+            if p_pid is not None:
+                pid_map[p_pid] = p
+
+        for proc in observations:
+            if not proc.get("parent_name"):
+                ppid = proc.get("ppid")
+                parent = pid_map.get(ppid)
+                if parent:
+                    pname = parent.get("process_name") or parent.get("name")
+                    if pname:
+                        proc["parent_name"] = pname
 
         # 1. Rule evaluation on each process
         for proc in observations:
@@ -71,12 +89,13 @@ class DetectionEngine:
                     "title": match.title,
                     "description": match.description,
                     "evidence_json": match.evidence,
-                    "occurred_at": now,
+                    "occurred_at": eval_time,
                     "received_at": now,
                     "fingerprint": match.fingerprint,
                 }
                 try:
                     saved_event = self.event_repo.record(event_record)
+                    match.event_id = saved_event["id"]
                     created_event_ids.append(saved_event["id"])
                 except Exception as exc:
                     logger.warning("Failed to save detection event for '%s': %s", match.rule_id, exc)
@@ -87,6 +106,10 @@ class DetectionEngine:
         for ev in recent_events:
             if ev.get("source") == "agent" and "fim" in ev.get("event_type", ""):
                 matches = self.rules.evaluate_fim_event(agent_id, ev)
+                for m in matches:
+                    m.event_id = ev.get("id")
+                    if "occurred_at" not in m.evidence:
+                        m.evidence["occurred_at"] = ev.get("occurred_at")
                 recent_fim_detections.extend(matches)
 
         # 3. Correlation evaluation
@@ -95,6 +118,7 @@ class DetectionEngine:
             process_detections=raw_detections,
             fim_detections=recent_fim_detections,
             associated_event_ids=created_event_ids,
+            snapshot_time=snapshot_time,
         )
 
         saved_alerts: List[Dict[str, Any]] = []
@@ -127,7 +151,7 @@ class DetectionEngine:
                 single_finding = self.correlation.calculate_single_rule_alert(
                     agent_id=agent_id,
                     detection=d,
-                    event_id=created_event_ids[raw_detections.index(d)] if created_event_ids else None,
+                    event_id=d.event_id,
                 )
                 alert_dict = {
                     "alert_key": single_finding.alert_key,
@@ -170,6 +194,7 @@ class DetectionEngine:
                 valid_event_ids.append(event_id)
 
         for match in matches:
+            match.event_id = event_id
             # Create or correlate Alert for sensitive file tampering
             alert_key = f"{agent_id}:{match.rule_id}:{match.fingerprint or match.title}"
             alert_dict = {

@@ -442,7 +442,12 @@ def ingest_process_telemetry():
         try:
             from detection.engine import DetectionEngine
             det_engine = DetectionEngine(db_path)
-            det_engine.evaluate_process_snapshot(agent_id, saved["id"], cleaned_processes)
+            det_engine.evaluate_process_snapshot(
+                agent_id=agent_id,
+                snapshot_id=saved["id"],
+                observations=cleaned_processes,
+                snapshot_time=envelope.get("collected_at"),
+            )
         except Exception as det_exc:
             current_app.logger.warning("Detection engine evaluation error: %s", det_exc)
     except Exception:

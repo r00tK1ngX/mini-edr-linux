@@ -7,6 +7,7 @@ falsely trigger critical malware alerts, while multi-stage indicators escalate a
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import logging
 import os
 from typing import Any, Dict, List, Optional, Set
@@ -35,8 +36,36 @@ class CorrelatedFinding:
 class CorrelationEngine:
     """Evaluates multi-source signals and correlates them into actionable security alerts."""
 
-    def __init__(self, min_correlation_score: int = 75):
+    def __init__(self, min_correlation_score: int = 75, time_window_seconds: int = 300):
         self.min_correlation_score = int(min_correlation_score)
+        self.time_window_seconds = max(10, int(time_window_seconds))
+
+    def _is_within_time_window(
+        self,
+        fim_detection: DetectionResult,
+        proc_detection: DetectionResult,
+        reference_time: Optional[str] = None,
+    ) -> bool:
+        """Verify that FIM activity occurred within time_window_seconds of process activity."""
+        fim_time_str = fim_detection.evidence.get("occurred_at") or fim_detection.evidence.get("received_at")
+        proc_time_str = (
+            proc_detection.evidence.get("start_time")
+            or proc_detection.evidence.get("process_started_at")
+            or reference_time
+        )
+
+        if not fim_time_str or not proc_time_str:
+            # If timestamps are not provided, assume within window for compatibility
+            return True
+
+        try:
+            fim_dt = datetime.fromisoformat(str(fim_time_str).replace("Z", "+00:00"))
+            proc_dt = datetime.fromisoformat(str(proc_time_str).replace("Z", "+00:00"))
+            diff_seconds = abs((proc_dt - fim_dt).total_seconds())
+            return diff_seconds <= self.time_window_seconds
+        except Exception as exc:
+            logger.debug("Failed to calculate correlation time difference: %s", exc)
+            return True
 
     def correlate_process_and_fim(
         self,
@@ -44,6 +73,7 @@ class CorrelationEngine:
         process_detections: List[DetectionResult],
         fim_detections: List[DetectionResult],
         associated_event_ids: Optional[List[int]] = None,
+        snapshot_time: Optional[str] = None,
     ) -> List[CorrelatedFinding]:
         """Correlate process anomalies with file integrity events on the same endpoint."""
         findings: List[CorrelatedFinding] = []
@@ -61,6 +91,11 @@ class CorrelationEngine:
             rule_ids = {d.rule_id for d in detections}
             proc_name = detections[0].evidence.get("process_name", "unknown")
             exe_path = detections[0].evidence.get("exe_path", "")
+            start_time = (
+                detections[0].evidence.get("start_time")
+                or detections[0].evidence.get("process_started_at")
+                or ""
+            )
 
             factors: List[Dict[str, Any]] = []
             score = 0
@@ -113,14 +148,15 @@ class CorrelationEngine:
                     "description": f"Process consuming high memory ({mem_val}%)",
                 })
 
-            # Check if this executable path was recently created or modified in FIM
+            # Check if this executable path was recently created or modified in FIM within time window
             matching_fim = []
             if exe_path:
                 norm_exe = os.path.normpath(exe_path)
                 for fd in fim_detections:
                     fim_file = fd.evidence.get("file_path")
                     if fim_file and os.path.normpath(fim_file) == norm_exe:
-                        matching_fim.append(fd)
+                        if self._is_within_time_window(fd, detections[0], snapshot_time):
+                            matching_fim.append(fd)
 
             if matching_fim:
                 score += 50
@@ -136,7 +172,10 @@ class CorrelationEngine:
             # Multi-stage detection: requires at least 2 distinct factors and reaches min_correlation_score
             if len(factors) >= 2 and total_score >= self.min_correlation_score:
                 severity = "critical" if total_score >= 85 else "high"
-                alert_key = f"{agent_id}:correlated:proc:{pid}:{proc_name}"
+
+                # Incorporate start_time / process identity to avoid alert collision on PID reuse
+                proc_identity = f"{pid}:{proc_name}" + (f":{start_time}" if start_time else "")
+                alert_key = f"{agent_id}:correlated:proc:{proc_identity}"
 
                 mitre_tags = set()
                 for d in detections:
@@ -146,6 +185,13 @@ class CorrelationEngine:
                     if getattr(fd, "mitre_attack", None):
                         mitre_tags.add(fd.mitre_attack)
                 mitre_str = " / ".join(sorted(mitre_tags)) if mitre_tags else "T1059 / T1105 / T1496"
+
+                # Collect event_ids specifically related to this process and matching FIM detections
+                proc_event_ids = [d.event_id for d in detections if getattr(d, "event_id", None) is not None]
+                fim_event_ids = [fd.event_id for fd in matching_fim if getattr(fd, "event_id", None) is not None]
+                correlated_event_ids = list(dict.fromkeys(proc_event_ids + fim_event_ids))
+                if not correlated_event_ids and associated_event_ids:
+                    correlated_event_ids = associated_event_ids
 
                 finding = CorrelatedFinding(
                     alert_key=alert_key,
@@ -163,11 +209,13 @@ class CorrelationEngine:
                         "pid": pid,
                         "process_name": proc_name,
                         "exe_path": exe_path,
+                        "process_identity": proc_identity,
+                        "start_time": start_time,
                         "factors": factors,
                         "total_risk_score": total_score,
                         "mitre_attack": mitre_str,
                     },
-                    event_ids=event_ids,
+                    event_ids=correlated_event_ids,
                 )
                 findings.append(finding)
 
@@ -180,7 +228,16 @@ class CorrelationEngine:
         event_id: Optional[int] = None,
     ) -> CorrelatedFinding:
         """Create a single-source alert finding for an individual high/critical detection."""
-        alert_key = f"{agent_id}:{detection.rule_id}:{detection.fingerprint or detection.title}"
+        pid = detection.evidence.get("pid")
+        proc_name = detection.evidence.get("process_name")
+        start_time = detection.evidence.get("start_time") or detection.evidence.get("process_started_at")
+
+        if pid is not None and proc_name:
+            proc_identity = f"{pid}:{proc_name}" + (f":{start_time}" if start_time else "")
+            alert_key = f"{agent_id}:{detection.rule_id}:{proc_identity}"
+        else:
+            alert_key = f"{agent_id}:{detection.rule_id}:{detection.fingerprint or detection.title}"
+
         factors = [{
             "factor": detection.rule_id,
             "score": detection.risk_score,

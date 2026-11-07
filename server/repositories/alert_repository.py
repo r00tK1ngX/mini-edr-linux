@@ -98,28 +98,29 @@ class AlertRepository(BaseRepository):
         }
 
         with self._connection(connection) as conn:
-            cursor = conn.execute(sql, params)
-            row = cursor.fetchone()
-            if row:
-                saved_alert = dict(row)
-            else:
-                sel = conn.execute(
-                    "SELECT * FROM alerts WHERE alert_key = ?",
-                    (alert["alert_key"],),
-                )
-                saved_alert = dict(sel.fetchone())
+            with conn:
+                cursor = conn.execute(sql, params)
+                row = cursor.fetchone()
+                if row:
+                    saved_alert = dict(row)
+                else:
+                    sel = conn.execute(
+                        "SELECT * FROM alerts WHERE alert_key = ?",
+                        (alert["alert_key"],),
+                    )
+                    saved_alert = dict(sel.fetchone())
 
-            if event_ids:
-                link_sql = """
-                    INSERT OR IGNORE INTO alert_events (alert_id, event_id, linked_at)
-                    VALUES (?, ?, ?);
-                """
-                conn.executemany(
-                    link_sql,
-                    [(saved_alert["id"], eid, now) for eid in event_ids],
-                )
+                if event_ids:
+                    link_sql = """
+                        INSERT OR IGNORE INTO alert_events (alert_id, event_id, linked_at)
+                        VALUES (?, ?, ?);
+                    """
+                    conn.executemany(
+                        link_sql,
+                        [(saved_alert["id"], eid, now) for eid in event_ids],
+                    )
 
-            return saved_alert
+                return saved_alert
 
     def get_by_id(
         self,

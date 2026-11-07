@@ -165,6 +165,12 @@ def collect_processes(sort_by: str = "pid") -> List[Dict[str, Any]]:
     elif sort_by in ("cpu_percent", "memory_percent"):
         results.sort(key=lambda p: p.get(sort_by) or 0.0, reverse=True)
 
+    # Enrich each process with parent_name resolved from the snapshot PID map
+    pid_to_name = {p["pid"]: p["process_name"] for p in results if "pid" in p and "process_name" in p}
+    for p in results:
+        ppid = p.get("ppid")
+        p["parent_name"] = pid_to_name.get(ppid) if ppid is not None else None
+
     return results
 
 
