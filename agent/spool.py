@@ -78,7 +78,35 @@ class EventSpool:
             conn.close()
 
     def _init_db(self) -> None:
-        """Create spool queue and baseline state tables."""
+        """Create spool queue and baseline state tables with automatic recovery from corruption."""
+        try:
+            self._setup_schema()
+        except sqlite3.DatabaseError as exc:
+            if self.db_path != ":memory:" and os.path.isfile(self.db_path):
+                corrupt_backup = f"{self.db_path}.corrupted.{int(datetime.now(timezone.utc).timestamp())}"
+                logger.critical(
+                    "Spool database '%s' is corrupted (%s). Backing up to '%s' and reinitializing fresh spool.",
+                    self.db_path,
+                    exc,
+                    corrupt_backup,
+                )
+                try:
+                    os.replace(self.db_path, corrupt_backup)
+                    for ext in ("-wal", "-shm"):
+                        aux = self.db_path + ext
+                        if os.path.isfile(aux):
+                            try:
+                                os.unlink(aux)
+                            except OSError:
+                                pass
+                except OSError as os_err:
+                    logger.error("Failed to backup corrupted spool database: %s", os_err)
+                self._setup_schema()
+            else:
+                raise
+
+    def _setup_schema(self) -> None:
+        """Execute SQLite DDL schemas for spool and baseline tables."""
         with self._connection() as conn:
             if self.db_path != ":memory:":
                 conn.execute("PRAGMA journal_mode = WAL;")

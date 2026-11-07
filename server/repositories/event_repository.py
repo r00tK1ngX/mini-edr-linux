@@ -204,10 +204,19 @@ class EventRepository(BaseRepository):
         days: int = 30,
         connection: Optional[sqlite3.Connection] = None,
     ) -> int:
-        """Prune security events older than N days. Returns count of deleted rows."""
+        """Prune security events older than N days while preserving evidence linked to active incidents.
+
+        Events linked to open alerts ('new' or 'acknowledged') are never pruned,
+        guaranteeing forensic integrity for unresolved incidents.
+        """
         sql = """
             DELETE FROM security_events
             WHERE datetime(occurred_at) < datetime('now', '-' || ? || ' days')
+              AND id NOT IN (
+                  SELECT ae.event_id FROM alert_events ae
+                  JOIN alerts a ON ae.alert_id = a.id
+                  WHERE a.status IN ('new', 'acknowledged')
+              )
         """
         with self._connection(connection) as conn:
             with conn:

@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -8,6 +9,8 @@ from flask import Flask, jsonify
 from server.db import init_db
 from server.routes import api_bp
 from server.web import web_bp
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,13 +37,16 @@ def _resolve_secret_key(project_root: Path) -> str:
                 return content
         key_file.parent.mkdir(parents=True, exist_ok=True)
         new_key = secrets.token_hex(32)
-        key_file.write_text(new_key, encoding="utf-8")
+        temp_file = key_file.with_suffix(f".tmp.{secrets.token_hex(4)}")
+        temp_file.write_text(new_key, encoding="utf-8")
         try:
-            key_file.chmod(0o600)
+            temp_file.chmod(0o600)
         except OSError:
             pass
+        temp_file.replace(key_file)
         return new_key
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to persist secret key at %s: %s (falling back to ephemeral key)", key_file, exc)
         return secrets.token_hex(32)
 
 

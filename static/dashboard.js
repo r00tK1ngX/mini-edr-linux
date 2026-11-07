@@ -56,6 +56,20 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// Whitelist validation helpers to prevent CSS class attribute injection
+const VALID_SEVERITIES = new Set(["info", "low", "medium", "high", "critical"]);
+const VALID_STATUSES = new Set(["online", "offline"]);
+
+function sanitizeSeverity(sev) {
+  const s = String(sev || "").toLowerCase().trim();
+  return VALID_SEVERITIES.has(s) ? s : "info";
+}
+
+function sanitizeStatus(st) {
+  const s = String(st || "").toLowerCase().trim();
+  return VALID_STATUSES.has(s) ? s : "offline";
+}
+
 // CSRF Token helper
 function getCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
@@ -256,7 +270,7 @@ async function viewEvidence(alertId) {
         <div style="background: rgba(0,0,0,0.4); border: 1px solid rgba(0,240,255,0.15); border-radius: 4px; padding: 0.85rem; margin-bottom: 0.75rem;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
             <span style="font-weight: 700; color: var(--neon-cyan); font-size: 0.8rem;">EVENT #${escapeHtml(ev.id)}: ${escapeHtml(ev.event_type)}</span>
-            <span class="badge badge-${escapeHtml(ev.severity)}">${escapeHtml(ev.severity.toUpperCase())}</span>
+            <span class="badge badge-${sanitizeSeverity(ev.severity)}">${escapeHtml(ev.severity.toUpperCase())}</span>
           </div>
           <div style="font-size: 0.8rem; color: #fff; margin-bottom: 0.5rem;">${escapeHtml(ev.title || "Untitled")}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Occurred: ${escapeHtml(ev.occurred_at)}</div>
@@ -271,7 +285,7 @@ async function viewEvidence(alertId) {
       <div style="margin-bottom: 1.25rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
           <h3 style="color: #fff; font-size: 1.1rem;">${escapeHtml(alert.title)}</h3>
-          <span class="badge badge-${escapeHtml(alert.severity)}">${escapeHtml(alert.severity.toUpperCase())}</span>
+          <span class="badge badge-${sanitizeSeverity(alert.severity)}">${escapeHtml(alert.severity.toUpperCase())}</span>
         </div>
         <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">${escapeHtml(alert.description || "No description provided.")}</p>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; font-size: 0.75rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 4px; border: 1px solid var(--border-dim);">
@@ -337,7 +351,7 @@ async function inspectEndpoint(agentId) {
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">HOSTNAME</span><div style="font-weight: 700; color: #fff;">${escapeHtml(ep.hostname)}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">AGENT ID</span><div class="cyber-code">${escapeHtml(ep.agent_id)}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">IP ADDRESS</span><div>${escapeHtml(ep.ip_address)}</div></div>
-        <div><span style="color: var(--text-muted); font-size: 0.75rem;">STATUS</span><div><span class="badge badge-${escapeHtml(ep.status)}">${escapeHtml(String(ep.status).toUpperCase())}</span></div></div>
+        <div><span style="color: var(--text-muted); font-size: 0.75rem;">STATUS</span><div><span class="badge badge-${sanitizeStatus(ep.status)}">${escapeHtml(String(ep.status).toUpperCase())}</span></div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">CPU USAGE</span><div style="color: var(--neon-cyan); font-weight: 700;">${ep.cpu_percent ? ep.cpu_percent.toFixed(1) + '%' : 'N/A'}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">RAM USAGE</span><div style="color: var(--neon-green); font-weight: 700;">${ep.memory_percent ? ep.memory_percent.toFixed(1) + '%' : 'N/A'}</div></div>
         <div><span style="color: var(--text-muted); font-size: 0.75rem;">MONITORED FILES (FIM)</span><div style="color: var(--neon-purple); font-weight: 700;">${baselinesCount} files</div></div>

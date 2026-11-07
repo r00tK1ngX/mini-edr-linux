@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/flask-3.x-green.svg)](https://flask.palletsprojects.com/)
 [![SQLite](https://img.shields.io/badge/sqlite-WAL%20mode-lightgrey.svg)](https://www.sqlite.org/)
-[![Tests](https://img.shields.io/badge/tests-287%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-302%20passed-brightgreen.svg)](tests/)
 [![Dashboard](https://img.shields.io/badge/ui-cyberpunk%20hacker-00f0ff.svg)](templates/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -352,7 +352,7 @@ Vòng đời cảnh báo tuân thủ nghiêm ngặt máy trạng thái hữu h�
 
 ## 10. Kiểm thử Hệ thống (Testing & Verification)
 
-Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **287 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc từ Unit, Integration, Security, Threat Simulation đến E2E:
+Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **302 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc từ Unit, Integration, Security, Threat Simulation đến E2E:
 
 ```bash
 # Kích hoạt môi trường và chạy toàn bộ kiểm thử
@@ -361,11 +361,14 @@ Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **287 ca k
 
 Kết quả thực nghiệm:
 ```text
-============================= 287 passed in 15.72s =============================
+============================= 302 passed in 17.73s =============================
 ```
 
 Chạy riêng từng bộ kiểm thử chuyên biệt:
 ```bash
+# Kiểm thử Nghiệm thu Độc lập Toàn diện (Spool FIFO, Crash Recovery, Timestomping, DOM XSS, Pruning)
+.venv/bin/pytest tests/test_final_verification.py
+
 # Kiểm thử Bảo mật Web (Open Redirect, CSRF Login/Logout, DOM XSS, Cookie Flags)
 .venv/bin/pytest tests/test_web_security_p1.py
 
@@ -389,14 +392,16 @@ Chạy riêng từng bộ kiểm thử chuyên biệt:
 
 ## 11. Tài liệu Kỹ thuật Chi tiết (Documentation)
 
-Dự án cung cấp bộ tài liệu kiến trúc và đặc tả chi tiết trong thư mục `docs/`:
+Dự án cung cấp bộ tài liệu kiến trúc và đặc tả chi tiết trong thư mục `docs/` và `audit/`:
 
+- 🎓 **[docs/THESIS_DEFENSE_QA.md](docs/THESIS_DEFENSE_QA.md):** Cẩm nang 8 câu hỏi phản biện học thuật chuyên sâu (Giải trình tại sao chọn pure Python thay vì eBPF, tại sao chọn SQLite WAL thay vì PostgreSQL, cách khắc phục TOCTOU symlink race, xử lý PID reuse, và phân tích biên FP/FN).
 - 📐 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):** Kiến trúc hệ thống toàn diện, sơ đồ ERD chi tiết, các sequence diagrams luồng dữ liệu, và phân tích thiết kế.
 - 📜 **[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md):** Đặc tả Common Telemetry Envelope 1.0, cấu trúc 9 thuộc tính tiến trình, cấu trúc FIM payload, timestamp ownership, và validator bounds.
 - 📡 **[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md):** Chi tiết toàn bộ REST APIs, Web Console Session Auth, CSRF Protection, HTTP status codes, và mã lỗi.
-- 🧪 **[docs/TEST_PLAN.md](docs/TEST_PLAN.md):** Kế hoạch kiểm thử, phạm vi, kịch bản chi tiết và ma trận nghiệm thu 230 test cases.
+- 🧪 **[docs/TEST_PLAN.md](docs/TEST_PLAN.md):** Kế hoạch kiểm thử, phạm vi, kịch bản chi tiết và ma trận nghiệm thu test cases.
 - 🎬 **[docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md):** Kịch bản kịch tính 5 bước và lời thoại chi tiết diễn tập bảo vệ trước Hội đồng chấm thi (5–7 phút).
 - 📊 **[docs/PRESENTATION_SLIDES_OUTLINE.md](docs/PRESENTATION_SLIDES_OUTLINE.md):** Đề cương 13 slide chuẩn học thuật tóm tắt toàn bộ nghiên cứu và công trình đồ án.
+- 📋 **[audit/FINAL_ACADEMIC_ACCEPTANCE_REPORT.md](audit/FINAL_ACADEMIC_ACCEPTANCE_REPORT.md):** Báo cáo nghiệm thu học thuật cuối cùng với kết luận **ACCEPTED WITH DOCUMENTED LIMITATIONS**.
 - 🗺️ **[Lo_trinh_trien_khai_Mini_EDR_Linux.md](Lo_trinh_trien_khai_Mini_EDR_Linux.md):** Lộ trình 10 giai đoạn phát triển và nghiệm thu đề tài.
 
 ---
@@ -410,3 +415,5 @@ Nhằm đảm bảo tính tập trung, đúng đắn và khả thi cao nhất c�
 3. **Quy mô Môi trường Lab:** Được thiết kế tối ưu cho mô hình phòng thí nghiệm và hệ thống mạng nội bộ quy mô vừa và nhỏ; sử dụng xác thực Bearer Token dùng chung và SQLite ở chế độ WAL.
 4. **Không Tự động Diệt Tiến trình (No Automatic Process Killing):** Để đảm bảo an toàn tuyệt đối cho hệ điều hành của người chấm thi trong buổi bảo vệ, hệ thống chỉ cảnh báo và đề xuất hành động cho quản trị viên (SOC Operator), không tự ý kill process hay cô lập tệp ngoài tầm kiểm soát.
 5. **Không Mở rộng Enterprise Bloat:** Không tự ý bổ sung các thành phần phức tạp không cần thiết cho đồ án Python như Kubernetes, Celery, Redis, PostgreSQL, eBPF kernel drivers, hoặc Enterprise SIEM.
+6. **Chính sách Thả rơi FIFO Hàng đợi Spool khi Quá tải:** Trong trường hợp mất mạng kéo dài làm vượt quá `max_spool_size` (1.000 sự kiện), spool sẽ giải phóng sự kiện unacknowledged cũ nhất theo FIFO để bảo vệ tài nguyên ổ đĩa máy trạm.
+7. **Bắt buộc Băm lại Tệp Nhạy cảm:** Các tệp cấu hình hệ thống trọng yếu (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `/etc/crontab`, v.v.) luôn được tính lại SHA-256 trên mỗi chu kỳ để triệt tiêu thủ đoạn qua mặt bằng timestomping.

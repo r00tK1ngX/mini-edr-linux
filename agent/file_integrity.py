@@ -23,6 +23,18 @@ HASH_CHUNK_SIZE = 64 * 1024
 # Default maximum file size to hash (50 MiB) to avoid high memory/CPU pressure
 DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024
 
+# Critical system files subjected to mandatory cryptographic rehashing on every scan
+# to defeat timestamp manipulation / timestomping evasion without sacrificing fleet scan speed
+SENSITIVE_FILES_FORCED_REHASH: Set[str] = {
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/etc/ssh/sshd_config",
+    "/etc/pam.d/common-auth",
+    "/etc/pam.d/sshd",
+    "/etc/crontab",
+}
+
 # Empty file SHA-256 constant (64 lowercase hex characters)
 EMPTY_FILE_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
@@ -85,6 +97,7 @@ def inspect_file(
     file_path: str,
     max_size: int = DEFAULT_MAX_FILE_SIZE,
     previous_record: Optional[Dict[str, Any]] = None,
+    force_hash: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Inspect a single regular file and extract FIM metadata.
 
@@ -106,8 +119,12 @@ def inspect_file(
         file_size = st.st_size
 
         # Quick check optimization: If size, mtime, and mode haven't changed, reuse cached sha256
+        # UNLESS forced via parameter or file is in SENSITIVE_FILES_FORCED_REHASH to defeat timestomping
+        should_rehash = force_hash or (norm_path in SENSITIVE_FILES_FORCED_REHASH)
+
         if (
-            previous_record
+            not should_rehash
+            and previous_record
             and previous_record.get("sha256")
             and previous_record.get("mtime_ns") == mtime_ns
             and previous_record.get("file_size_bytes") == file_size
@@ -145,6 +162,7 @@ def scan_monitored_paths(
     recursive: bool = True,
     max_file_size: int = DEFAULT_MAX_FILE_SIZE,
     previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None,
+    force_rehash: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """Scan all configured files and directories.
 
@@ -175,6 +193,7 @@ def scan_monitored_paths(
                     norm_target,
                     max_size=max_file_size,
                     previous_record=prev_map.get(norm_target),
+                    force_hash=force_rehash,
                 )
                 if record:
                     results[record["file_path"]] = record
@@ -193,6 +212,7 @@ def scan_monitored_paths(
                                 norm_file,
                                 max_size=max_file_size,
                                 previous_record=prev_map.get(norm_file),
+                                force_hash=force_rehash,
                             )
                             if record:
                                 results[record["file_path"]] = record
@@ -400,13 +420,18 @@ class FileIntegrityMonitor:
             self.baseline = self.spool.load_baseline()
             logger.info("Restored %d baseline records from persistent spool on startup", len(self.baseline))
 
-    def scan(self, previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Dict[str, Any]]:
+    def scan(
+        self,
+        previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None,
+        force_rehash: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """Perform a scan of all configured monitored paths."""
         return scan_monitored_paths(
             self.monitored_paths,
             recursive=self.recursive,
             max_file_size=self.max_file_size,
             previous_baseline=previous_baseline,
+            force_rehash=force_rehash,
         )
 
     def initialize_baseline(self, force_rescan: bool = False) -> int:
@@ -419,14 +444,14 @@ class FileIntegrityMonitor:
             self.baseline = self.spool.load_baseline()
             return len(self.baseline)
 
-        self.baseline = self.scan()
+        self.baseline = self.scan(force_rehash=force_rescan)
         if self.spool and hasattr(self.spool, "save_baseline"):
             self.spool.save_baseline(self.baseline)
         return len(self.baseline)
 
-    def scan_for_changes(self) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+    def scan_for_changes(self, force_rehash: bool = False) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
         """Perform a scan and calculate changes without committing to internal baseline."""
-        current_scan = self.scan(previous_baseline=self.baseline)
+        current_scan = self.scan(previous_baseline=self.baseline, force_rehash=force_rehash)
         return detect_file_changes(self.baseline, current_scan)
 
     def commit_baseline(self, new_baseline: Dict[str, Dict[str, Any]]) -> None:
