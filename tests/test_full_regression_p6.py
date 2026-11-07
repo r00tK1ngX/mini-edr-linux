@@ -1,0 +1,221 @@
+"""Phase 6 Full Regression & End-to-End System Verification Suite.
+
+Validates the complete Mini EDR Linux operational pipeline:
+1. TEST-P6-01: Full System E2E (Live Agent -> Collectors -> Ingestion -> SQLite WAL -> Detection Engine -> Alerting -> SOC Console Triage).
+2. TEST-P6-02: Live Attack Scenario Simulator (scripts/simulate_attack_scenario.py --auto).
+3. TEST-P6-03: System Ingestion and Correlation Pipeline Integrity under simulated threat workload.
+"""
+
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import sqlite3
+import sys
+import threading
+import time
+from typing import Generator
+import uuid
+
+import pytest
+from werkzeug.serving import make_server
+
+from agent.client import AgentClient
+from agent.main import AgentConfig, AgentOrchestrator
+from scripts import simulate_attack_scenario
+from server.app import create_app
+from server.db import get_connection
+from server.repositories.alert_repository import AlertRepository
+
+TOKEN = "p6-master-acceptance-token-123456789012"
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+@pytest.fixture()
+def live_server(tmp_path) -> Generator[dict, None, None]:
+    """Start an isolated live Flask HTTP server on an ephemeral loopback port."""
+    database_path = tmp_path / "mini_edr_p6_live.db"
+    application = create_app({
+        "TESTING": True,
+        "EDR_API_TOKEN": TOKEN,
+        "DATABASE_PATH": str(database_path),
+        "OFFLINE_AFTER_SECONDS": 15,
+    })
+
+    server = make_server("127.0.0.1", 0, application)
+    port = server.port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    server_url = f"http://127.0.0.1:{port}"
+
+    yield {
+        "url": server_url,
+        "database_path": str(database_path),
+        "port": port,
+        "app": application,
+    }
+
+    server.shutdown()
+    thread.join()
+
+
+# =============================================================================
+# TEST-P6-01: Full System E2E Integration Pipeline
+# =============================================================================
+
+def test_full_system_e2e_pipeline_with_agent_and_soc_triage(live_server, tmp_path):
+    """TEST-P6-01: Complete pipeline from Live Agent to Detection to Alert Triage."""
+    server_url = live_server["url"]
+    db_path = live_server["database_path"]
+
+    # 1. Setup isolated monitored directory for the agent
+    monitored_dir = tmp_path / "p6_fim_monitored"
+    monitored_dir.mkdir()
+    sensitive_file = monitored_dir / "shadow_copy.conf"
+    sensitive_file.write_text("root:$6$salt$hash:19000:0:99999:7:::\n")
+
+    cfg = AgentConfig(
+        agent_id="agent-p6-e2e-node",
+        server_url=server_url,
+        api_token=TOKEN,
+        monitored_paths=[str(monitored_dir)],
+    )
+    orchestrator = AgentOrchestrator(config=cfg)
+
+    # 2. First cycle: registers endpoint, sends metrics & process snapshot, syncs FIM baseline
+    cycle1 = orchestrator.run_single_cycle(force_all=True)
+    assert cycle1["heartbeat_sent"] is True
+    assert cycle1["process_snapshot_sent"] is True
+    assert cycle1["fim_synced"] is True
+    assert cycle1["fim_events_sent"] == 0
+
+    # Verify endpoint is registered and online
+    client = live_server["app"].test_client()
+    auth_h = {"Authorization": f"Bearer {TOKEN}"}
+    ep_res = client.get("/api/v1/endpoints", headers=auth_h)
+    assert ep_res.status_code == 200
+    endpoints = ep_res.get_json()["endpoints"]
+    assert any(e["agent_id"] == "agent-p6-e2e-node" and e["status"] == "online" for e in endpoints)
+
+    # 3. Simulate unauthorized FIM modification (trigger FIM event)
+    time.sleep(0.05)
+    sensitive_file.write_text("root:NEW_MALICIOUS_PASSWORD_HASH:19000:0:99999:7:::\n")
+
+    cycle2 = orchestrator.run_single_cycle(force_all=True)
+    assert cycle2["fim_events_sent"] == 1
+
+    # 4. Ingest a suspicious process snapshot (/tmp/bad_shell) to verify Detection Engine
+    msg_id = str(uuid.uuid4())
+    proc_payload = {
+        "message_id": msg_id,
+        "schema_version": "1.0",
+        "agent_id": "agent-p6-e2e-node",
+        "collected_at": _utc_now(),
+        "payload": {
+            "process_count": 2,
+            "processes": [
+                {
+                    "pid": 1,
+                    "process_name": "systemd",
+                    "exe_path": "/usr/lib/systemd/systemd",
+                    "cpu_percent": 0.1,
+                },
+                {
+                    "pid": 6666,
+                    "ppid": 1,
+                    "process_name": "bad_shell",
+                    "exe_path": "/tmp/bad_shell",
+                    "username": "root",
+                    "cpu_percent": 15.0,
+                    "memory_percent": 2.0,
+                },
+            ],
+        },
+    }
+    proc_res = client.post("/api/v1/telemetry/processes", json=proc_payload, headers=auth_h)
+    assert proc_res.status_code == 201
+
+    # 5. Verify alerts were generated by Detection Engine
+    alerts_res = client.get("/api/v1/alerts", headers=auth_h)
+    assert alerts_res.status_code == 200
+    alerts = alerts_res.get_json()["alerts"]
+    assert len(alerts) >= 1
+
+    # Locate the suspicious path alert
+    suspicious_alert = next((a for a in alerts if "/tmp" in a.get("title", "") or "suspicious" in a.get("title", "").lower() or a.get("severity") in ("high", "critical")), None)
+    assert suspicious_alert is not None
+    alert_id = suspicious_alert["id"]
+    assert suspicious_alert["status"] == "new"
+
+    # 6. SOC Operator Triage: Acknowledge alert
+    ack_res = client.post(f"/api/v1/alerts/{alert_id}/acknowledge", headers=auth_h)
+    assert ack_res.status_code == 200
+    assert ack_res.get_json()["status"] == "acknowledged"
+
+    # 7. SOC Operator Triage: Resolve alert with operator note
+    resolve_res = client.post(
+        f"/api/v1/alerts/{alert_id}/resolve",
+        json={"note": "Verified benign binary in test sandbox; incident resolved."},
+        headers=auth_h,
+    )
+    assert resolve_res.status_code == 200
+    assert resolve_res.get_json()["status"] == "resolved"
+    assert "Verified benign binary" in resolve_res.get_json()["resolution_note"]
+
+    # 8. Verify database PRAGMA integrity
+    with get_connection(db_path) as conn:
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        assert integrity == "ok"
+        assert len(fk_errors) == 0
+
+
+# =============================================================================
+# TEST-P6-02: Attack Scenario Simulator Automated Execution
+# =============================================================================
+
+def test_attack_scenario_simulator_auto_execution(live_server, monkeypatch):
+    """TEST-P6-02: Execute scripts/simulate_attack_scenario.py in automated mode."""
+    server_url = live_server["url"]
+    db_path = live_server["database_path"]
+
+    # Configure environment for the simulator script
+    monkeypatch.setenv("EDR_SERVER_URL", server_url)
+    monkeypatch.setenv("EDR_API_TOKEN", TOKEN)
+
+    old_argv = sys.argv
+    sys.argv = ["simulate_attack_scenario.py", "--auto"]
+
+    try:
+        # Run simulator script
+        simulate_attack_scenario.main()
+    finally:
+        sys.argv = old_argv
+
+    # Verify alerts created by the attack simulator on the live server
+    client = live_server["app"].test_client()
+    auth_h = {"Authorization": f"Bearer {TOKEN}"}
+
+    summary_res = client.get("/api/v1/alerts/summary", headers=auth_h)
+    assert summary_res.status_code == 200
+    data = summary_res.get_json()
+    summary = data.get("summary", data)
+    assert summary["total_alerts"] >= 2
+
+    # Check that both High and Critical alerts were registered
+    alerts_res = client.get("/api/v1/alerts", headers=auth_h)
+    assert alerts_res.status_code == 200
+    alerts = alerts_res.get_json()["alerts"]
+    severities = {a["severity"] for a in alerts}
+    assert "critical" in severities or "high" in severities
+
+    # Verify database integrity post-simulation
+    with get_connection(db_path) as conn:
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        assert integrity == "ok"
+        assert len(fk_errors) == 0

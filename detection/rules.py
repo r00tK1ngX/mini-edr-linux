@@ -24,6 +24,7 @@ DEFAULT_SENSITIVE_FILES = [
     "/etc/pam.d/common-auth",
     "/etc/pam.d/sshd",
     "/etc/crontab",
+    "/tmp/mini_edr_demo/secure_config.conf",
 ]
 
 
@@ -568,7 +569,11 @@ class FimSensitiveFileRule(BaseRule):
             norm_path.startswith(sp) for sp in ("/etc/ssh/", "/etc/pam.d/", "/etc/sudoers.d/")
         )
 
-        if is_sensitive and event_type in ("fim_file_modified", "fim_file_deleted", "file.modified", "file.deleted"):
+        if is_sensitive and (
+            event_type in ("fim_file_modified", "fim_modified", "fim_file_deleted", "fim_deleted", "file.modified", "file.deleted")
+            or "modified" in event_type
+            or "deleted" in event_type
+        ):
             agent_id = context.get("agent_id", "unknown")
             action = "deleted" if "deleted" in event_type else "modified"
             severity = "critical" if norm_path in ("/etc/shadow", "/etc/sudoers") else self.severity

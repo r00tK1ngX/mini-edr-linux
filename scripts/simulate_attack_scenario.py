@@ -50,9 +50,9 @@ def print_banner():
 
 def load_env_config():
     env_path = PROJECT_ROOT / '.env'
-    token = 'test-token'
-    host = '127.0.0.1'
-    port = 5000
+    token = os.getenv('EDR_API_TOKEN', 'test-token')
+    host = os.getenv('EDR_HOST', '127.0.0.1')
+    port = int(os.getenv('EDR_PORT', '5000'))
     if env_path.exists():
         with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -62,13 +62,13 @@ def load_env_config():
                 k, v = line.split('=', 1)
                 k = k.strip()
                 v = v.strip().strip('"\'')
-                if k == 'EDR_API_TOKEN':
+                if k == 'EDR_API_TOKEN' and 'EDR_API_TOKEN' not in os.environ:
                     token = v
-                elif k == 'EDR_HOST':
+                elif k == 'EDR_HOST' and 'EDR_HOST' not in os.environ:
                     host = v
-                elif k == 'EDR_PORT':
+                elif k == 'EDR_PORT' and 'EDR_PORT' not in os.environ:
                     port = int(v)
-    base_url = f"http://{host}:{port}"
+    base_url = os.getenv('EDR_SERVER_URL', f"http://{host}:{port}")
     return base_url, token
 
 
