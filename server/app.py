@@ -109,6 +109,13 @@ def create_app(test_config=None):
             "error": "Request body is too large",
         }), 413
 
+    @app.errorhandler(UnicodeDecodeError)
+    def malformed_utf8_error(_error):
+        return jsonify({
+            "success": False,
+            "error": "Malformed UTF-8 encoding in request payload",
+        }), 400
+
     return app
 
 

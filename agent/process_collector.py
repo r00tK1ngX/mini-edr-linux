@@ -44,15 +44,15 @@ def _format_start_time(create_time: Optional[float]) -> Optional[str]:
 
 
 def _clean_process_name(name: Optional[str], exe_path: Optional[str], pid: int) -> str:
-    """Ensure process_name is non-empty and stripped."""
+    """Ensure process_name is non-empty, stripped, and safely bounded."""
     if name and name.strip():
-        return name.strip()
+        return name.strip()[:255]
     if exe_path and exe_path.strip():
         # Use filename of executable
         parts = exe_path.strip().rsplit("/", 1)
         base = parts[-1] if len(parts) > 1 else parts[0]
         if base.strip():
-            return base.strip()
+            return base.strip()[:255]
     return f"proc-{pid}"
 
 

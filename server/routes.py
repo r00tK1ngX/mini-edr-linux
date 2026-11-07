@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 import hashlib
 from hmac import compare_digest
@@ -16,6 +17,17 @@ from server.repositories.endpoint_repository import EndpointRepository
 from server.repositories.event_repository import EventRepository
 from server.repositories.metrics_repository import MetricsRepository
 from server.repositories.process_repository import ProcessRepository
+
+# Phase 5 Resource & Reliability Bounds
+MAX_PROCESSES_PER_SNAPSHOT = int(os.getenv("MAX_PROCESSES_PER_SNAPSHOT", "1000"))
+MAX_FILES_PER_BASELINE = int(os.getenv("MAX_FILES_PER_BASELINE", "5000"))
+MAX_EVENT_BATCH = int(os.getenv("MAX_EVENT_BATCH", "500"))
+MAX_FIELD_LENGTH_NAME = 255
+MAX_FIELD_LENGTH_PATH = 4096
+MAX_FIELD_LENGTH_USER = 128
+MAX_FIELD_LENGTH_DESC = 4096
+MAX_FIELD_LENGTH_FINGERPRINT = 4096
+MAX_EVIDENCE_BYTES = 65536
 
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -113,6 +125,10 @@ def _validate_optional_string(payload: Dict[str, Any], field: str, max_length: i
 
 def _validate_envelope(req) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
     """Validate standard Phase 2 Message Envelope."""
+    if req.content_length is not None and current_app.config.get("MAX_CONTENT_LENGTH"):
+        if req.content_length > current_app.config["MAX_CONTENT_LENGTH"]:
+            return None, _error("Request body is too large", 413)
+
     if not req.is_json:
         return None, _error("Content-Type must be application/json")
 
@@ -133,7 +149,7 @@ def _validate_envelope(req) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[An
         return None, _error("agent_id must be a non-empty string of at most 128 characters")
 
     collected_at = body.get("collected_at")
-    if not is_valid_iso8601_utc(collected_at):
+    if not is_valid_iso8601_utc(collected_at) or len(str(collected_at)) > 64:
         return None, _error("collected_at must be a valid ISO 8601 UTC timestamp")
 
     payload = body.get("payload")
@@ -358,6 +374,9 @@ def ingest_process_telemetry():
     if not isinstance(process_count, int) or isinstance(process_count, bool) or process_count < 0:
         return _error("process_count must be an integer >= 0")
 
+    if process_count > MAX_PROCESSES_PER_SNAPSHOT:
+        return _error(f"process_count ({process_count}) exceeds maximum allowed limit of {MAX_PROCESSES_PER_SNAPSHOT}")
+
     processes = payload["processes"]
     if not isinstance(processes, list):
         return _error("processes must be an array")
@@ -387,6 +406,18 @@ def ingest_process_telemetry():
         process_name = proc.get("process_name") or proc.get("name")
         if not isinstance(process_name, str) or not process_name.strip():
             return _error("process_name must be a non-empty string")
+        if len(process_name.strip()) > MAX_FIELD_LENGTH_NAME:
+            return _error(f"process_name exceeds maximum length of {MAX_FIELD_LENGTH_NAME} characters for pid {pid}")
+
+        username = proc.get("username")
+        if username is not None:
+            if not isinstance(username, str) or len(username) > MAX_FIELD_LENGTH_USER:
+                return _error(f"username must be a string of at most {MAX_FIELD_LENGTH_USER} characters for pid {pid}")
+
+        exe_path = proc.get("exe_path")
+        if exe_path is not None:
+            if not isinstance(exe_path, str) or len(exe_path) > MAX_FIELD_LENGTH_PATH:
+                return _error(f"exe_path must be a string of at most {MAX_FIELD_LENGTH_PATH} characters for pid {pid}")
 
         cpu_p = proc.get("cpu_percent")
         if cpu_p is not None and (not is_valid_number(cpu_p) or cpu_p < 0):
@@ -521,6 +552,9 @@ def sync_file_baselines():
     if not files:
         return _error("files array cannot be empty")
 
+    if len(files) > MAX_FILES_PER_BASELINE:
+        return _error(f"files count ({len(files)}) exceeds maximum allowed limit of {MAX_FILES_PER_BASELINE}")
+
     cleaned_files = []
     seen_paths = set()
     for f in files:
@@ -530,6 +564,9 @@ def sync_file_baselines():
         file_path = f.get("file_path")
         if not isinstance(file_path, str) or not file_path.startswith("/"):
             return _error("file_path must be a non-empty absolute path starting with '/'")
+
+        if len(file_path) > MAX_FIELD_LENGTH_PATH:
+            return _error(f"file_path exceeds maximum length of {MAX_FIELD_LENGTH_PATH} characters")
 
         if file_path in seen_paths:
             return _error(f"Duplicate file_path '{file_path}' in baseline batch")
@@ -621,6 +658,8 @@ def ingest_security_event():
     event_type = payload["event_type"]
     if not isinstance(event_type, str) or not event_type.strip():
         return _error("event_type must be a non-empty string")
+    if len(event_type.strip()) > 64:
+        return _error("event_type exceeds maximum length of 64 characters")
 
     source = payload.get("source", "agent")
     if source != "agent":
@@ -631,16 +670,33 @@ def ingest_security_event():
         return _error(f"Invalid severity '{severity}'. Must be one of info, low, medium, high, critical")
 
     occurred_at = payload.get("occurred_at") or envelope.get("collected_at")
-    if not occurred_at or not is_valid_iso8601_utc(occurred_at):
+    if not occurred_at or not is_valid_iso8601_utc(occurred_at) or len(str(occurred_at)) > 64:
         return _error("occurred_at must be a valid ISO 8601 UTC timestamp")
 
     title = payload["title"]
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
         return _error("title must be a non-empty string of at most 255 characters")
 
+    desc = payload.get("description")
+    if desc is not None:
+        if not isinstance(desc, str) or len(desc) > MAX_FIELD_LENGTH_DESC:
+            return _error(f"description must be a string of at most {MAX_FIELD_LENGTH_DESC} characters")
+
+    fp = payload.get("fingerprint")
+    if fp is not None:
+        if not isinstance(fp, str) or len(fp) > MAX_FIELD_LENGTH_FINGERPRINT:
+            return _error(f"fingerprint must be a string of at most {MAX_FIELD_LENGTH_FINGERPRINT} characters")
+
     evidence = payload.get("evidence", {})
     if not isinstance(evidence, dict):
         return _error("evidence must be a JSON object")
+
+    try:
+        serialized_evidence = json.dumps(evidence)
+        if len(serialized_evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
+            return _error(f"evidence payload exceeds maximum allowed size of {MAX_EVIDENCE_BYTES} bytes")
+    except (TypeError, ValueError):
+        return _error("evidence must be serializable JSON")
 
     event_repo = EventRepository(db_path)
     message_id = envelope["message_id"].strip()
@@ -965,3 +1021,25 @@ def dismiss_alert(alert_id: int):
         "resolution_note": updated.get("resolution_note"),
         "dismissed": True,
     }), 200
+
+
+# -----------------------------------------------------------------------------
+# Maintenance & Data Retention Routes (Phase 5)
+# -----------------------------------------------------------------------------
+
+@api_bp.post("/maintenance/prune")
+def maintenance_prune():
+    """Administrative maintenance endpoint to prune expired telemetry."""
+    from server.maintenance import prune_telemetry
+    data = request.get_json(silent=True) or {}
+    days = data.get("retention_days", 7)
+    try:
+        days = int(days)
+        if days <= 0:
+            return _error("retention_days must be an integer greater than 0")
+    except (ValueError, TypeError):
+        return _error("retention_days must be a valid integer")
+
+    db_path = current_app.config["DATABASE_PATH"]
+    result = prune_telemetry(db_path, retention_days=days)
+    return jsonify({"success": True, **result}), 200

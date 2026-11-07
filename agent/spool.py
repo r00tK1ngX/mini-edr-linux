@@ -40,7 +40,7 @@ class EventSpool:
         max_size: int = DEFAULT_MAX_SPOOL_EVENTS,
         agent_id: str = "agent-local",
     ):
-        self.max_size = max(10, int(max_size))
+        self.max_size = max(1, int(max_size))
         self.agent_id = agent_id
 
         if db_path:
@@ -202,15 +202,28 @@ class EventSpool:
                 })
             return results
 
-    def mark_acknowledged(self, message_id: str) -> bool:
-        """Mark an event as acknowledged after successful server ingestion."""
+    def mark_acknowledged(self, message_id: Any) -> bool:
+        """Mark an event or list of events as acknowledged after successful server ingestion."""
         if not message_id:
             return False
+        if isinstance(message_id, (list, tuple, set)):
+            ids = [str(m).strip() for m in message_id if str(m).strip()]
+            if not ids:
+                return False
+            with self._connection() as conn:
+                with conn:
+                    placeholders = ",".join("?" for _ in ids)
+                    cursor = conn.execute(
+                        f"UPDATE fim_spool SET status = 'acknowledged' WHERE message_id IN ({placeholders})",
+                        tuple(ids),
+                    )
+                    return cursor.rowcount > 0
+
         with self._connection() as conn:
             with conn:
                 cursor = conn.execute(
                     "UPDATE fim_spool SET status = 'acknowledged' WHERE message_id = ?",
-                    (message_id,),
+                    (str(message_id).strip(),),
                 )
                 return cursor.rowcount > 0
 

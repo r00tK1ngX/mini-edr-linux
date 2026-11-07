@@ -236,3 +236,22 @@ class ProcessRepository(BaseRepository):
         with self._connection(connection) as conn:
             cursor = conn.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
+
+    def prune_older_than(
+        self,
+        days: int = 7,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """Prune process snapshots older than N days.
+
+        Foreign keys with ON DELETE CASCADE automatically delete associated process_observations.
+        Returns count of deleted snapshot rows.
+        """
+        sql = """
+            DELETE FROM process_snapshots
+            WHERE datetime(collected_at) < datetime('now', '-' || ? || ' days')
+        """
+        with self._connection(connection) as conn:
+            with conn:
+                cursor = conn.execute(sql, (days,))
+                return cursor.rowcount

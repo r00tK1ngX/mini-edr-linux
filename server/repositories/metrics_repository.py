@@ -129,3 +129,18 @@ class MetricsRepository(BaseRepository):
         with self._connection(connection) as conn:
             cursor = conn.execute(sql, (agent_id,))
             return cursor.fetchone()[0]
+
+    def prune_older_than(
+        self,
+        days: int = 7,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """Prune historical metrics records older than N days. Returns count of deleted rows."""
+        sql = """
+            DELETE FROM system_metrics
+            WHERE datetime(collected_at) < datetime('now', '-' || ? || ' days')
+        """
+        with self._connection(connection) as conn:
+            with conn:
+                cursor = conn.execute(sql, (days,))
+                return cursor.rowcount

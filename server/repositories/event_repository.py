@@ -65,15 +65,16 @@ class EventRepository(BaseRepository):
         }
 
         with self._connection(connection) as conn:
-            cursor = conn.execute(sql, params)
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            sel = conn.execute(
-                "SELECT * FROM security_events WHERE message_id = ?",
-                (event["message_id"],),
-            )
-            return dict(sel.fetchone())
+            with conn:
+                cursor = conn.execute(sql, params)
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                sel = conn.execute(
+                    "SELECT * FROM security_events WHERE message_id = ?",
+                    (event["message_id"],),
+                )
+                return dict(sel.fetchone())
 
     def get_by_id(
         self,
@@ -197,3 +198,18 @@ class EventRepository(BaseRepository):
         with self._connection(connection) as conn:
             cursor = conn.execute(sql, tuple(params))
             return cursor.fetchone()[0]
+
+    def prune_older_than(
+        self,
+        days: int = 30,
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """Prune security events older than N days. Returns count of deleted rows."""
+        sql = """
+            DELETE FROM security_events
+            WHERE datetime(occurred_at) < datetime('now', '-' || ? || ' days')
+        """
+        with self._connection(connection) as conn:
+            with conn:
+                cursor = conn.execute(sql, (days,))
+                return cursor.rowcount
