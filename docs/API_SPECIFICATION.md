@@ -14,7 +14,7 @@
 
 This document specifies the HTTP REST interface between Linux Agents, the Mini EDR Server, and authorized SOC operators, as well as the Web Dashboard endpoints.
 
-All routes documented herein are fully implemented and verified via automated test suites (230/230 passing tests). Telemetry ingestion routes follow the data contract defined in `docs/DATA_CONTRACT.md`.
+All routes documented herein are fully implemented and verified via automated test suites (287/287 passing tests). Telemetry ingestion routes follow the data contract defined in `docs/DATA_CONTRACT.md`.
 
 ## 2. Conventions
 
@@ -99,17 +99,21 @@ Error strings are diagnostic text, not stable machine-readable identifiers. Clie
 
 | Method | Path | Purpose | Status |
 |---|---|---|---|
-| GET | `/health` | Server health check | Implemented |
-| POST | `/api/v1/heartbeat` | Register/update endpoint heartbeat | Implemented |
-| GET | `/api/v1/endpoints` | List endpoint inventory | Implemented |
-| POST | `/api/v1/telemetry/system` | Ingest system metrics | Designed; pending |
-| POST | `/api/v1/telemetry/processes` | Ingest process snapshot | Designed; pending |
-| POST | `/api/v1/file-baselines` | Synchronize file integrity baseline | Designed; pending |
-| POST | `/api/v1/events` | Ingest Agent security event | Designed; pending |
-| GET | `/api/v1/alerts` | List/filter alerts | Designed; pending |
-| GET | `/api/v1/alerts/{alert_id}` | Get alert detail and linked events | Designed; pending |
-| POST | `/api/v1/alerts/{alert_id}/acknowledge` | Acknowledge an alert | Designed; pending |
-| POST | `/api/v1/alerts/{alert_id}/resolve` | Resolve an alert | Designed; pending |
+| GET | `/health` | Server health check | Implemented (v0.2.0) |
+| POST | `/api/v1/heartbeat` | Register/update endpoint heartbeat | Implemented (v0.2.0) |
+| GET | `/api/v1/endpoints` | List endpoint inventory | Implemented (v0.2.0) |
+| POST | `/api/v1/telemetry/system` | Ingest system metrics | Implemented (v0.2.0) |
+| POST | `/api/v1/telemetry/processes` | Ingest process snapshot | Implemented (v0.2.0) |
+| POST | `/api/v1/file-baselines` | Synchronize file integrity baseline | Implemented (v0.2.0) |
+| POST | `/api/v1/fim/baselines` | Alias for baseline synchronization | Implemented (v0.2.0) |
+| POST | `/api/v1/events` | Ingest Agent security event | Implemented (v0.2.0) |
+| GET | `/api/v1/alerts` | List/filter alerts | Implemented (v0.2.0) |
+| GET | `/api/v1/alerts/summary` | Global and per-agent alert statistics | Implemented (v0.2.0) |
+| GET | `/api/v1/alerts/{alert_id}` | Get alert detail and linked events | Implemented (v0.2.0) |
+| POST | `/api/v1/alerts/{alert_id}/acknowledge` | Acknowledge an alert | Implemented (v0.2.0) |
+| POST | `/api/v1/alerts/{alert_id}/resolve` | Resolve an alert | Implemented (v0.2.0) |
+| POST | `/api/v1/alerts/{alert_id}/dismiss` | Dismiss an alert (false positive) | Implemented (v0.2.0) |
+| POST | `/api/v1/maintenance/prune` | Prune historical telemetry (TTL retention) | Implemented (v0.2.0) |
 
 The literal Flask route converter may use `<int:alert_id>`; `{alert_id}` in this specification denotes the path parameter.
 

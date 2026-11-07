@@ -14,7 +14,7 @@
 
 This document defines the data contract between the Mini EDR Linux Agent and the Flask Server. It specifies message envelopes, resource payloads, field constraints, timestamp ownership, validation, idempotency, retry behavior, and trust boundaries.
 
-All listed Agent modules, API endpoints, schema validators, DAL repositories, and database behaviors are fully implemented and verified with automated test suites (230/230 passing tests).
+All listed Agent modules, API endpoints, schema validators, DAL repositories, and database behaviors are fully implemented and verified with automated test suites (287/287 passing tests).
 
 ## 2. Compatibility and scope
 
@@ -243,7 +243,7 @@ Example:
 
 | Field | Type | Required | Constraints |
 |---|---|---:|---|
-| `process_count` | integer | Yes | Greater than or equal to 0 |
+| `process_count` | integer | Yes | Integer between 0 and 1000 (`MAX_PROCESSES_PER_SNAPSHOT`) |
 | `processes` | array | Yes | Number of elements must equal `process_count` |
 
 Each process object:
@@ -283,15 +283,15 @@ Each process object:
 | `message_id` | `process_snapshots.message_id` |
 | `schema_version` | `process_snapshots.schema_version` |
 | `agent_id` | `process_snapshots.agent_id` |
-| `payload.process_count` | `process_snapshots.process_count` |
+| `payload.process_count` | `process_snapshots.process_count` (bounded: $\le 1000$) |
 | `collected_at` | `process_snapshots.collected_at` |
 | Server-generated time | `process_snapshots.received_at` |
+| Server-computed canonical hash | `process_snapshots.payload_hash` |
 | `processes[].pid` | `process_observations.pid` |
 | `processes[].ppid` | `process_observations.ppid` |
-| `processes[].process_name` | `process_observations.process_name` |
-| `processes[].username` | `process_observations.username` |
-| `processes[].exe_path` | `process_observations.exe_path` |
-| `processes[].cmdline` | `process_observations.cmdline` |
+| `processes[].process_name` | `process_observations.process_name` (bounded: $\le 255$ chars) |
+| `processes[].username` | `process_observations.username` (bounded: $\le 128$ chars) |
+| `processes[].exe_path` | `process_observations.exe_path` (bounded: $\le 4096$ chars) |
 | `processes[].cpu_percent` | `process_observations.cpu_percent` |
 | `processes[].memory_percent` | `process_observations.memory_percent` |
 | `processes[].rss_bytes` | `process_observations.rss_bytes` |
@@ -340,6 +340,7 @@ Example:
 ### 7.2. Baseline semantics
 
 - A baseline is identified by `(agent_id, file_path)`.
+- **Batch Size Limit:** The `files` array must contain at least 1 and at most 5,000 entries (`MAX_FILES_PER_BASELINE = 5000`). Batches exceeding 5,000 entries are rejected with HTTP 400.
 - Repeated synchronization updates the existing baseline (upsert); it must not create duplicate rows.
 - `first_seen_at` is assigned by the Server when the baseline is first created and is preserved on subsequent updates.
 - `last_seen_at` is updated when the file is observed as present.
@@ -349,8 +350,8 @@ Example:
 - A missing-state update is valid only for a file that already has a known baseline.
 - A file omitted from a batch must not automatically be interpreted as deleted.
 - The Agent must explicitly report a missing state.
-- **Two-Phase Commit Guarantee:** FIM changes are identified via `scan_for_changes()` and committed to the local baseline state (`commit_baseline()`) ONLY after the generated security events have been successfully transmitted and acknowledged with HTTP 201 by the Server. If transmission fails (e.g., temporary network disconnection), the baseline is not updated, guaranteeing that events will not be lost.
-- **Symlink Traversal & TOCTOU Defense:** The Agent uses `os.lstat()` and verifies `stat.S_ISLNK()` before hashing or inspecting files, preventing symlink redirection to unauthorized system files. Quick-check caching (`mtime_ns`, `file_size_bytes`, `file_mode`) avoids unnecessary full file reads.
+- **Two-Phase Commit & Persistent Local Spool:** FIM changes are identified via `scan_for_changes()`, queued durably in the local SQLite spool (`agent/spool.py`), and committed to local baseline state (`commit_baseline()`) only after transmission or durable spooling.
+- **Symlink Traversal & TOCTOU Defense:** The Agent opens files using `os.open(norm_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)` and inspects the descriptor directly with `os.fstat(fd)`, guaranteeing race-condition-free evaluation and rejecting symlinks pointing outside monitored roots. Quick-check caching (`mtime_ns`, `file_size_bytes`, `file_mode`) avoids unnecessary full file reads.
 
 The current `file_baselines` table does not have a batch `message_id` or receipt record. Therefore, the defined retry safety for this resource is row-level upsert by `(agent_id, file_path)`; durable batch-level deduplication is not currently represented in the schema.
 

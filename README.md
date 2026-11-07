@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/flask-3.x-green.svg)](https://flask.palletsprojects.com/)
 [![SQLite](https://img.shields.io/badge/sqlite-WAL%20mode-lightgrey.svg)](https://www.sqlite.org/)
-[![Tests](https://img.shields.io/badge/tests-230%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-287%20passed-brightgreen.svg)](tests/)
 [![Dashboard](https://img.shields.io/badge/ui-cyberpunk%20hacker-00f0ff.svg)](templates/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -36,13 +36,14 @@ Mini EDR combines an independent host-level monitoring Agent, a secure centraliz
 
 ## 1. Tính năng Nổi bật (Key Features)
 
-- 🖥️ **Quản lý Hạm đội Máy trạm (Fleet Inventory):** Tự động phát hiện và quản lý trạng thái máy trạm `online`/`offline` theo chu kỳ Heartbeat thời gian thực.
-- 📊 **Giám sát Tài nguyên & Tiến trình (Process & Resource Monitoring):** Thu thập CPU%, RAM%, Disk%, Uptime và chụp ảnh snapshot toàn diện bảng tiến trình `/proc` (PID, PPID, User, Path, Cmdline, RSS).
-- 🛡️ **Giám sát Toàn vẹn Tệp tin (FIM - File Integrity Monitoring):** Theo dõi đệ quy các thư mục hệ thống nhạy cảm (`/etc`, `/bin`, `/sbin`) sử dụng mã băm mật mã học **SHA-256** để phát hiện tức thời hành vi thêm, sửa, xóa tệp.
-- ⚡ **Động cơ Phát hiện Tương quan (Real-time Detection & Correlation Engine):** Khớp các quy tắc phát hiện mối nguy (Reverse shell, Netcat, Hack tools, Leo thang đặc quyền, Can thiệp `/etc/shadow`), tính điểm rủi ro $0 - 100$ và khử trùng cảnh báo bằng `alert_key`.
-- 🚨 **Quản lý Sự cố Toàn diện (Incident Triage & Response):** Cung cấp luồng xử lý sự cố an ninh chuẩn SOC (`NEW` ➔ `ACKNOWLEDGED` ➔ `RESOLVED`), lưu vết thời gian và ghi chú giải quyết (`resolution_note`).
-- 🌐 **Cyberpunk Hacker Web Dashboard:** Bảng điều khiển SOC Command Center với giao diện Dark Terminal, dải màu Neon, quét lưới Matrix CRT, xác thực phiên người dùng (`/login`), chống CSRF và XSS, đồ thị và modals trực quan hóa dữ liệu 100% độc lập không cần Internet (Air-gapped ready).
-- 🔒 **Gia cố An toàn & Toàn vẹn Dữ liệu:** Xác thực Bearer Token ($\ge 32$ ký tự), bảo vệ CSRF (`X-CSRF-Token`), 100% Parameterized SQL ngăn SQLi, chống DOM XSS qua `escapeHtml()`, chống gửi lặp bằng UUIDv4, giới hạn payload 16 MiB (`EDR_MAX_CONTENT_LENGTH`), cam kết FIM hai pha (Two-phase commit) và ngăn hạ cấp mức độ nghiêm trọng của Alert.
+- 🖥️ **Quản lý Hạm đội Máy trạm (Fleet Inventory):** Tự động phát hiện và quản lý trạng thái máy trạm `online`/`offline` theo chu kỳ Heartbeat thời gian thực với ngữ nghĩa Partial-Update bảo toàn metadata hệ điều hành.
+- 📊 **Giám sát Tài nguyên & Tiến trình (Process & Resource Monitoring):** Thu thập CPU%, RAM%, Disk%, Uptime và chụp ảnh snapshot 9 thuộc tính tiến trình chuẩn xác từ `/proc` (PID, PPID, Process Name, Parent Name, Username, Executable Path, CPU%, Memory%, RSS bytes, Start Time) bảo vệ bí mật thông tin người dùng.
+- 🛡️ **Giám sát Toàn vẹn Tệp tin (FIM - File Integrity Monitoring):** Theo dõi đệ quy các thư mục hệ thống nhạy cảm (`/etc`, `/bin`, `/sbin`) sử dụng mã băm mật mã học **SHA-256**, phòng thủ TOCTOU Symlink Traversal bằng `os.open(O_NOFOLLOW)` và `os.fstat()`.
+- 💾 **Hàng đợi Lưu trữ Cục bộ Bền vững (Durable Local Event Spool):** Tích hợp SQLite Spool Queue (`fim_spool`) tại Agent, đảm bảo không thất thoát sự kiện FIM khi đứt kết nối mạng hoặc Agent bị tắt đột ngột (SIGKILL).
+- ⚡ **Động cơ Phát hiện Tương quan (Real-time Detection & Correlation Engine):** Khớp các quy tắc an ninh (Reverse shell, Netcat, Staged payload `/tmp`, Shell spawn, Can thiệp `/etc/shadow`), tính điểm rủi ro $0 - 100$ có thể giải thích (Explainable AI/Heuristics), tương quan đa sự kiện theo cửa sổ thời gian (300s) và chống tái sử dụng PID (PID reuse resilience).
+- 🚨 **Quản lý Sự cố Toàn diện (Incident Triage & Response):** Cung cấp luồng xử lý sự cố an ninh chuẩn SOC (`NEW` ➔ `ACKNOWLEDGED` ➔ `RESOLVED`), liên kết trực tiếp ID sự kiện đóng góp, lưu vết thời gian và ghi chú giải quyết (`resolution_note`).
+- 🌐 **Cyberpunk Hacker Web Dashboard:** Bảng điều khiển SOC Command Center với giao diện Dark Terminal, dải màu Neon, quét lưới Matrix CRT, xác thực phiên người dùng (`/login`), chống CSRF, chống DOM XSS qua `escapeHtml()`, đồ thị và modals trực quan hóa dữ liệu 100% độc lập không cần Internet (Air-gapped ready).
+- 🔒 **Gia cố Toàn vẹn & Kiểm soát Tài nguyên (Data Integrity & Resource Bounds):** Khử trùng lặp snapshot bằng Canonical JSON SHA-256 (HTTP 409 Conflict vs 200 Duplicate), giới hạn kích thước gói tin (`MAX_PROCESSES_PER_SNAPSHOT=1000`, `MAX_FILES_PER_BASELINE=5000`), cắt chuỗi an toàn phía Agent, cơ chế dọn dẹp dữ liệu quá hạn định kỳ (`prune_telemetry`), phòng thủ chuỗi UTF-8 hỏng và giới hạn payload HTTP 413.
 
 ---
 
@@ -88,7 +89,7 @@ Xem sơ đồ chi tiết và các sequence diagrams tại [docs/ARCHITECTURE.md]
 | **Agent Collector** | `psutil` & Python Standard Lib | Thu thập tài nguyên phần cứng, tiến trình, mạng |
 | **Cryptography** | `hashlib` (SHA-256), `secrets` | Băm tệp FIM, sinh token bảo mật |
 | **Frontend UI** | HTML5, Modern CSS3, Vanilla ES6+ | Giao diện Cyberpunk Hacker, Modals, Toast (Offline) |
-| **Testing Framework** | `pytest`, `pytest-cov` | 214 bài test tự động từ Unit đến E2E & Security |
+| **Testing Framework** | `pytest` | 287 bài test tự động đạt 100% tỷ lệ vượt qua từ Unit đến E2E & Security |
 
 ---
 
@@ -351,7 +352,7 @@ Vòng đời cảnh báo tuân thủ nghiêm ngặt máy trạng thái hữu h�
 
 ## 10. Kiểm thử Hệ thống (Testing & Verification)
 
-Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **230 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc:
+Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **287 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc từ Unit, Integration, Security, Threat Simulation đến E2E:
 
 ```bash
 # Kích hoạt môi trường và chạy toàn bộ kiểm thử
@@ -360,25 +361,28 @@ Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **230 ca k
 
 Kết quả thực nghiệm:
 ```text
-============================= 230 passed in 17.92s =============================
+============================= 287 passed in 15.72s =============================
 ```
 
 Chạy riêng từng bộ kiểm thử chuyên biệt:
 ```bash
-# Kiểm thử Unit Agent (System, Process, FIM)
-.venv/bin/pytest tests/test_system_collector.py tests/test_file_integrity.py tests/test_agent_orchestrator.py
+# Kiểm thử Bảo mật Web (Open Redirect, CSRF Login/Logout, DOM XSS, Cookie Flags)
+.venv/bin/pytest tests/test_web_security_p1.py
 
-# Kiểm thử Detection Rules & Correlation
-.venv/bin/pytest tests/test_detection.py tests/test_correlation.py
+# Kiểm thử FIM Reliability (TOCTOU Symlink Defense, Persistent SQLite Spool)
+.venv/bin/pytest tests/test_fim_reliability_p2.py
 
-# Kiểm thử Alert Management & Life-cycle
-.venv/bin/pytest tests/test_alert_management.py
+# Kiểm thử Động cơ Phát hiện (PID Reuse, Detection-to-Event Mapping, Parent Resolution)
+.venv/bin/pytest tests/test_detection_correctness_p3.py
 
-# Kiểm thử Tích hợp Chu trình E2E Toàn hệ thống
-.venv/bin/pytest tests/test_full_system_e2e.py tests/test_phase4_e2e.py
+# Kiểm thử Toàn vẹn Dữ liệu (Canonical Hash Deduplication, 409 Conflict, Bulk Chunking)
+.venv/bin/pytest tests/test_data_integrity_p4.py
 
-# Kiểm thử An ninh & Độ tin cậy (SQLi, DOM XSS, CSRF, Token, Payload Bounds)
-.venv/bin/pytest tests/test_security_reliability.py
+# Kiểm thử Kiểm soát Tài nguyên & Độ tin cậy (Payload Limits, Field Bounds, DB Pruning)
+.venv/bin/pytest tests/test_resource_reliability_p5.py
+
+# Kiểm thử Hồi quy Toàn diện & Tự động hóa Kịch bản Tấn công (E2E & Attack Simulator)
+.venv/bin/pytest tests/test_full_regression_p6.py tests/test_full_system_e2e.py tests/test_phase4_e2e.py
 ```
 
 ---

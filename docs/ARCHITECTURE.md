@@ -101,42 +101,56 @@ Linux Agent hoạt động độc lập, gọn nhẹ, chạy ngầm trên máy k
 
 2. **Process Collector (`agent/process_collector.py`):**
    - Quét bảng tiến trình của hệ điều hành Linux qua `/proc` bằng thư viện `psutil`.
-   - Trích xuất 9 thuộc tính cốt lõi của tiến trình: `pid`, `ppid`, `process_name` (hoặc `name`), `username`, `exe_path`, `cmdline`, `cpu_percent`, `memory_percent`, `rss_bytes`, `process_started_at`.
-   - Thu thập có trách nhiệm trong môi trường lab học thuật: Ghi nhận đường dẫn thực thi và command line để phục vụ phân loại rủi ro mà không can thiệp sâu vào bộ nhớ tiến trình của hệ điều hành.
+   - Trích xuất 9 thuộc tính cốt lõi chuẩn hóa của tiến trình: `pid`, `ppid`, `process_name` (hoặc `name`), `parent_name` (tự động phân giải từ cây PID trong snapshot), `username`, `exe_path`, `cpu_percent`, `memory_percent`, `rss_bytes`, `process_started_at`.
+   - Thu thập có trách nhiệm và bảo vệ bí mật thông tin: Không thu thập toàn bộ `cmdline` hoặc biến môi trường `environ` để tránh rò rỉ secret, token, mật khẩu của người dùng trên Linux endpoint.
    - Bắt các ngoại lệ đặc trưng của Linux kernel: `NoSuchProcess` (tiến trình tắt giữa chừng), `AccessDenied` (tiến trình của root/kernel thread), và `ZombieProcess`.
+   - **Cắt ngắn an toàn (Safe Truncation):** Hàm `_clean_process_name` chủ động giới hạn độ dài tên tiến trình và executable tối đa 255 ký tự (`[:255]`) để chống tràn bộ đệm và lỗi định dạng.
 
 3. **File Integrity Monitoring (`agent/file_integrity.py`):**
    - Giám sát các tệp tin cấu hình và nhị phân then chốt (như `/etc/passwd`, `/etc/shadow`, `/usr/bin/sudo`, các tệp trong `/bin`, `/sbin`, `/tmp`).
    - Tính toán mã băm mật mã học **SHA-256** (chuẩn 64 ký tự hex chữ thường).
-   - **Cơ chế Two-Phase Commit:** Tách biệt việc phát hiện (`scan_for_changes`) khỏi việc ghi nhận (`commit_baseline`). Trạng thái baseline chỉ được cập nhật sau khi các bản tin sự kiện FIM đã được gửi thành công lên Server, ngăn ngừa hoàn toàn tình trạng mất mát sự kiện khi đứt kết nối mạng.
-   - **Chống Tấn công Vượt quyền Liên kết (Symlink Traversal / TOCTOU):** Sử dụng `os.lstat()` và kiểm tra cờ `stat.S_ISLNK()` trước khi mở đọc nội dung tệp; từ chối băm hoặc theo dõi symlink giả mạo trỏ tới tệp nhạy cảm bên ngoài.
+   - **Chống Tấn công Vượt quyền Liên kết & TOCTOU Race Condition:** Mở tệp trực tiếp bằng `os.open(norm_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)` kết hợp kiểm tra `os.fstat(fd)` trên chính file descriptor đang mở; từ chối băm hoặc theo dõi symlink giả mạo trỏ ra ngoài thư mục được chỉ định.
    - **Tối ưu Hiệu năng Quick-check Caching:** So khớp nhanh `mtime_ns`, `file_size_bytes` và `file_mode` trước khi đọc toàn bộ tệp để tính mã băm SHA-256, giảm thiểu tải I/O trên ổ đĩa.
    - Phát hiện 3 loại biến động tệp tin:
      - `created`: Tệp mới xuất hiện trong thư mục được giám sát.
      - `modified`: Tệp bị thay đổi nội dung (mã băm khác biệt) hoặc thay đổi quyền hạn `file_mode`.
      - `deleted`: Tệp biến mất khỏi hệ thống (chuyển trạng thái baseline thành `missing`).
 
-4. **Agent Orchestrator (`agent/orchestrator.py`):**
+4. **Hàng đợi Sự kiện Cục bộ Bền vững (`agent/spool.py`):**
+   - Lưu trữ hàng đợi sự kiện an ninh vào cơ sở dữ liệu SQLite cục bộ (`fim_spool`) trên Agent.
+   - Bảo toàn sự kiện tuyệt đối trước các sự cố ngắt kết nối mạng, rớt gói tin hoặc Agent bị dừng đột ngột bằng lệnh `SIGKILL`.
+   - Lưu trữ trạng thái baseline bền vững (`fim_baseline_state`) để khôi phục tức thì khi Agent khởi động lại.
+   - Quản lý dung lượng hàng đợi có giới hạn (`DEFAULT_MAX_SPOOL_EVENTS = 1000`), tự động dọn dẹp các sự kiện đã xác nhận (`acknowledged`) và áp dụng chính sách FIFO drop loại bỏ sự kiện pending cũ nhất khi đĩa đầy.
+
+5. **Agent Orchestrator (`agent/main.py`):**
    - Điều phối vòng lặp vận hành (Heartbeat loop, Metrics loop, Process snapshot loop, FIM baseline/scan loop).
    - Quản lý hàng đợi và thời điểm thu thập dữ liệu có chu kỳ, xử lý ngắt an toàn `SIGINT`/`SIGTERM`.
 
-5. **Agent HTTP Client (`agent/client.py`):**
+6. **Agent HTTP Client (`agent/client.py`):**
    - Đóng gói dữ liệu theo chuẩn Common Telemetry Envelope 1.0 (tạo `message_id` UUIDv4 duy nhất, timestamp ISO 8601 UTC).
    - Đính kèm Bearer Token xác thực trong header `Authorization`.
    - Cơ chế Retry và bắt lỗi kết nối khi Server tạm thời mất liên lạc.
 
 ---
 
-### 2.2. Phân hệ API Server & Data Ingestion (`server/routes.py`, `server/app.py`)
+### 2.2. Phân hệ API Server & Data Ingestion (`server/routes.py`, `server/app.py`, `server/maintenance.py`)
 
 - **Kiến trúc Application Factory:** Khởi tạo ứng dụng Flask qua hàm `create_app(test_config=None)`, hỗ trợ cấu hình tách biệt giữa môi trường kiểm thử và vận hành thật.
 - **Xác thực Bearer Token:** Kiểm tra header `Authorization: Bearer <TOKEN>` thông qua middleware decorator `require_api_token`. Khi ở môi trường vận hành (production mode), hàm factory tự động kiểm tra độ phức tạp của `EDR_API_TOKEN` ($\ge 32$ ký tự, không dùng giá trị placeholder mặc định).
-- **Kiểm soát kích thước (Rate & Payload Limiting):** Cấu hình `MAX_CONTENT_LENGTH = 16 * 1024 * 1024` (16 MiB default, tùy biến qua biến môi trường `EDR_MAX_CONTENT_LENGTH`) đảm bảo tiếp nhận đầy đủ các snapshot bảng tiến trình kích thước lớn của hệ thống Linux mà không bị ngắt kết nối.
-- **Xác thực dữ liệu chặt chẽ (Schema Validation):**
-  - Kiểm tra tính hợp lệ của `message_id` (chuẩn UUIDv4).
-  - Kiểm tra `schema_version` (bắt buộc `"1.0"`).
-  - Kiểm tra phạm vi đo lường metrics (CPU/RAM/Disk nằm trong đoạn $[0, 100]$, Uptime $\ge 0$).
-  - Chống trùng lặp (Idempotency): Trả về HTTP 200 cho bản tin gửi lặp có cùng nội dung hoặc HTTP 409 khi xung đột dữ liệu.
+- **Kiểm soát kích thước & Tài nguyên (Resource Bounds & Payload Limiting):**
+  - Cấu hình `MAX_CONTENT_LENGTH = 16 * 1024 * 1024` (16 MiB default) kết hợp xử lý lỗi HTTP 413.
+  - Ngưỡng giới hạn Process Snapshot: `MAX_PROCESSES_PER_SNAPSHOT = 1000`.
+  - Ngưỡng giới hạn Baseline Batch: `MAX_FILES_PER_BASELINE = 5000`.
+  - Ràng buộc độ dài trường: `process_name` (255), `username` (128), `exe_path` (4096), `file_path` (4096), `evidence` (64 KB).
+- **Phòng thủ Malformed UTF-8:** Bắt lỗi `UnicodeDecodeError` trả về HTTP 400 Bad Request dạng JSON, ngăn sập máy chủ.
+- **Khử trùng lặp Xác thực Chuẩn tắc (Canonical JSON Hash Deduplication):**
+  - Tính mã băm SHA-256 trên chuỗi JSON chuẩn tắc `json.dumps(payload, sort_keys=True, separators=(',', ':'))`.
+  - Cùng `message_id` + Cùng `payload_hash` $\to$ Trả về `200 OK` với `{"duplicate": true}` (Idempotent retry).
+  - Cùng `message_id` + Khác `payload_hash` $\to$ Trả về `409 Conflict` (`"Conflict: message_id already exists with different payload"`).
+- **Bảo trì Định kỳ & Thu gom Dữ liệu (TTL Retention Pruning):**
+  - Module `server/maintenance.py` cung cấp hàm `prune_telemetry(retention_days=7)` xóa bỏ dữ liệu `system_metrics` và `process_snapshots` cũ hơn N ngày.
+  - Khóa ngoại `ON DELETE CASCADE` tự động dọn dẹp các bản ghi quan sát trong `process_observations`.
+  - Cung cấp endpoint quản trị `POST /api/v1/maintenance/prune`.
 
 ---
 
