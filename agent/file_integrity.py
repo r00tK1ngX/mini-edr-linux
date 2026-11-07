@@ -35,31 +35,48 @@ def _utc_now() -> str:
 def compute_sha256(file_path: str, max_size: int = DEFAULT_MAX_FILE_SIZE) -> Optional[str]:
     """Calculate the SHA-256 hexadecimal hash of a regular file.
 
+    Employs TOCTOU-resistant open semantics using os.O_NOFOLLOW so that
+    symbolic links are atomically rejected by the kernel and never traversed.
+
     Returns:
         Lowercase 64-character hexadecimal SHA-256 string, or None if reading fails,
         file is a symlink, or file exceeds max_size.
     """
+    fd = None
     try:
-        # Check lstat to avoid reading through symlinks
-        st = os.lstat(file_path)
+        # Atomic open: Reject symlinks via O_NOFOLLOW
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(file_path, flags)
+
+        # Use fstat directly on the open file descriptor to inspect the exact opened file
+        st = os.fstat(fd)
         if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            os.close(fd)
             return None
 
         file_size = st.st_size
         if file_size > max_size:
             logger.warning("File %s exceeds max hash size (%d bytes), skipping", file_path, file_size)
+            os.close(fd)
             return None
 
         if file_size == 0:
+            os.close(fd)
             return EMPTY_FILE_SHA256
 
         hasher = hashlib.sha256()
-        with open(file_path, "rb") as f:
+        with os.fdopen(fd, "rb") as f:
+            fd = None  # fdopen transfers ownership of fd to the file object
             while chunk := f.read(HASH_CHUNK_SIZE):
                 hasher.update(chunk)
         return hasher.hexdigest().lower()
 
     except (PermissionError, FileNotFoundError, IsADirectoryError, OSError) as exc:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         logger.debug("Failed to compute SHA-256 for %s: %s", file_path, exc)
         return None
 
@@ -76,25 +93,17 @@ def inspect_file(
         Returns None if file is not a regular file, is a symlink, or cannot be read.
     """
     try:
-        # Check lstat first to reject symlinks and prevent traversal / TOCTOU
-        st = os.lstat(file_path)
-        if stat.S_ISLNK(st.st_mode):
-            logger.debug("Skipping symlink %s to avoid traversal/TOCTOU", file_path)
+        norm_path = os.path.normpath(file_path)
+
+        # Check lstat first to reject symlinks and avoid traversal
+        st = os.lstat(norm_path)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            logger.debug("Skipping non-regular file or symlink %s", norm_path)
             return None
 
-        # Only monitor regular files (skip sockets, fifos, character/block devices)
-        if not stat.S_ISREG(st.st_mode):
-            return None
-
-        resolved_path = str(Path(file_path).resolve())
-        # Ensure resolved path is still a regular file
-        st_res = os.stat(resolved_path, follow_symlinks=False)
-        if not stat.S_ISREG(st_res.st_mode):
-            return None
-
-        file_mode = st_res.st_mode & 0o7777
-        mtime_ns = int(getattr(st_res, "st_mtime_ns", int(st_res.st_mtime * 1e9)))
-        file_size = st_res.st_size
+        file_mode = st.st_mode & 0o7777
+        mtime_ns = int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9)))
+        file_size = st.st_size
 
         # Quick check optimization: If size, mtime, and mode haven't changed, reuse cached sha256
         if (
@@ -106,7 +115,8 @@ def inspect_file(
         ):
             sha256_hash = previous_record["sha256"]
         else:
-            sha256_hash = compute_sha256(resolved_path, max_size=max_size)
+            # Recompute hash using TOCTOU-resistant open
+            sha256_hash = compute_sha256(norm_path, max_size=max_size)
             if sha256_hash is None:
                 return None
 
@@ -114,7 +124,7 @@ def inspect_file(
         first_seen = previous_record.get("first_seen_at", now) if previous_record else now
 
         return {
-            "file_path": resolved_path,
+            "file_path": norm_path,
             "sha256": sha256_hash,
             "file_size_bytes": file_size,
             "mtime_ns": mtime_ns,
@@ -146,40 +156,43 @@ def scan_monitored_paths(
 
     for target in monitored_paths:
         try:
-            target_path = Path(target).resolve()
-            if not target_path.exists():
+            norm_target = os.path.normpath(target)
+            if not os.path.exists(norm_target):
                 logger.debug("Monitored target does not exist: %s", target)
                 continue
 
-            # Skip symlink targets
-            if target_path.is_symlink():
-                logger.debug("Skipping symlink target %s", target)
+            # Check lstat to skip symlink targets pointing outside
+            try:
+                st_target = os.lstat(norm_target)
+                if stat.S_ISLNK(st_target.st_mode):
+                    logger.debug("Skipping symlink target %s", target)
+                    continue
+            except OSError:
                 continue
 
-            if target_path.is_file():
-                resolved_key = str(target_path)
+            if os.path.isfile(norm_target):
                 record = inspect_file(
-                    resolved_key,
+                    norm_target,
                     max_size=max_file_size,
-                    previous_record=prev_map.get(resolved_key),
+                    previous_record=prev_map.get(norm_target),
                 )
                 if record:
                     results[record["file_path"]] = record
                 continue
 
-            if target_path.is_dir():
-                for root, _, files in os.walk(str(target_path), followlinks=False):
+            if os.path.isdir(norm_target):
+                for root, _, files in os.walk(norm_target, followlinks=False):
                     for file_name in files:
                         full_path = os.path.join(root, file_name)
                         try:
                             # Reject symlinks inside scanned directory
                             if os.path.islink(full_path):
                                 continue
-                            resolved_key = str(Path(full_path).resolve())
+                            norm_file = os.path.normpath(full_path)
                             record = inspect_file(
-                                full_path,
+                                norm_file,
                                 max_size=max_file_size,
-                                previous_record=prev_map.get(resolved_key),
+                                previous_record=prev_map.get(norm_file),
                             )
                             if record:
                                 results[record["file_path"]] = record
@@ -216,6 +229,7 @@ def detect_file_changes(
             # File newly created
             updated_baseline[file_path] = current_record
             events.append({
+                "message_id": str(uuid.uuid4()),
                 "change_type": "created",
                 "file_path": file_path,
                 "current": current_record,
@@ -228,6 +242,7 @@ def detect_file_changes(
             updated_record["first_seen_at"] = prev.get("first_seen_at", current_record["first_seen_at"])
             updated_baseline[file_path] = updated_record
             events.append({
+                "message_id": str(uuid.uuid4()),
                 "change_type": "created",
                 "file_path": file_path,
                 "current": updated_record,
@@ -245,6 +260,7 @@ def detect_file_changes(
                 updated_record["first_seen_at"] = prev.get("first_seen_at", current_record["first_seen_at"])
                 updated_baseline[file_path] = updated_record
                 events.append({
+                    "message_id": str(uuid.uuid4()),
                     "change_type": "modified",
                     "file_path": file_path,
                     "current": updated_record,
@@ -265,6 +281,7 @@ def detect_file_changes(
             updated_baseline[file_path] = marked_missing
 
             events.append({
+                "message_id": str(uuid.uuid4()),
                 "change_type": "deleted",
                 "file_path": file_path,
                 "current": marked_missing,
@@ -311,6 +328,7 @@ def format_fim_security_event(
     message_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Convert an individual FIM change event into a standard Security Event envelope."""
+    msg_id = message_id or change_event.get("message_id") or str(uuid.uuid4())
     change_type = change_event["change_type"]
     file_path = change_event["file_path"]
     curr = change_event.get("current") or {}
@@ -344,7 +362,7 @@ def format_fim_security_event(
 
     return {
         "schema_version": "1.0",
-        "message_id": message_id or str(uuid.uuid4()),
+        "message_id": msg_id,
         "agent_id": agent_id,
         "collected_at": detected_at,
         "payload": {
@@ -369,12 +387,18 @@ class FileIntegrityMonitor:
         monitored_paths: Optional[List[str]] = None,
         recursive: bool = True,
         max_file_size: int = DEFAULT_MAX_FILE_SIZE,
+        spool: Optional[Any] = None,
     ):
         self.agent_id = agent_id
         self.monitored_paths = monitored_paths or ["/etc", "/bin"]
         self.recursive = recursive
         self.max_file_size = max_file_size
+        self.spool = spool
         self.baseline: Dict[str, Dict[str, Any]] = {}
+
+        if self.spool and hasattr(self.spool, "has_persisted_baseline") and self.spool.has_persisted_baseline():
+            self.baseline = self.spool.load_baseline()
+            logger.info("Restored %d baseline records from persistent spool on startup", len(self.baseline))
 
     def scan(self, previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Dict[str, Any]]:
         """Perform a scan of all configured monitored paths."""
@@ -385,9 +409,19 @@ class FileIntegrityMonitor:
             previous_baseline=previous_baseline,
         )
 
-    def initialize_baseline(self) -> int:
-        """Scan and establish initial baseline without generating change events."""
+    def initialize_baseline(self, force_rescan: bool = False) -> int:
+        """Scan and establish initial baseline without generating change events.
+
+        If a baseline is already persisted in the local spool and force_rescan is False,
+        the persisted baseline is retained across restarts.
+        """
+        if not force_rescan and self.spool and hasattr(self.spool, "has_persisted_baseline") and self.spool.has_persisted_baseline():
+            self.baseline = self.spool.load_baseline()
+            return len(self.baseline)
+
         self.baseline = self.scan()
+        if self.spool and hasattr(self.spool, "save_baseline"):
+            self.spool.save_baseline(self.baseline)
         return len(self.baseline)
 
     def scan_for_changes(self) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
@@ -398,11 +432,13 @@ class FileIntegrityMonitor:
     def commit_baseline(self, new_baseline: Dict[str, Dict[str, Any]]) -> None:
         """Commit new baseline state after successful transmission."""
         self.baseline = new_baseline
+        if self.spool and hasattr(self.spool, "save_baseline"):
+            self.spool.save_baseline(new_baseline)
 
     def check_for_changes(self) -> List[Dict[str, Any]]:
         """Perform a scan, update internal baseline, and return detected change events."""
         new_baseline, events = self.scan_for_changes()
-        self.baseline = new_baseline
+        self.commit_baseline(new_baseline)
         return events
 
     def get_baseline_sync_payload(self, message_id: Optional[str] = None) -> Dict[str, Any]:

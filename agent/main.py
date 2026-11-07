@@ -37,6 +37,7 @@ from agent.client import (
 )
 from agent.file_integrity import FileIntegrityMonitor
 from agent.process_collector import ProcessCollector
+from agent.spool import EventSpool
 from agent.system_collector import SystemCollector, get_hostname
 
 logger = logging.getLogger("mini_edr_agent")
@@ -56,6 +57,8 @@ class AgentConfig:
     monitored_paths: List[str] = field(default_factory=lambda: ["/etc", "/bin", "/tmp"])
     request_timeout: float = 5.0
     max_retries: int = 3
+    spool_path: Optional[str] = None
+    max_spool_size: int = 1000
 
     @classmethod
     def from_env(cls, env_path: Optional[str] = None) -> "AgentConfig":
@@ -87,6 +90,11 @@ class AgentConfig:
         raw_paths = os.getenv("EDR_MONITORED_PATHS", "/etc,/bin,/tmp")
         monitored_paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
 
+        spool_path = os.getenv("EDR_SPOOL_PATH")
+        if not spool_path:
+            spool_path = str(Path(__file__).resolve().parent.parent / "data" / f"spool_{agent_id}.db")
+        max_spool_size = int(os.getenv("EDR_MAX_SPOOL_SIZE", "1000"))
+
         return cls(
             agent_id=agent_id,
             server_url=server_url,
@@ -98,6 +106,8 @@ class AgentConfig:
             monitored_paths=monitored_paths or ["/etc", "/bin", "/tmp"],
             request_timeout=float(os.getenv("EDR_REQUEST_TIMEOUT", "5.0")),
             max_retries=int(os.getenv("EDR_MAX_RETRIES", "3")),
+            spool_path=spool_path,
+            max_spool_size=max_spool_size,
         )
 
 
@@ -111,8 +121,16 @@ class AgentOrchestrator:
         process_collector: Optional[ProcessCollector] = None,
         fim_monitor: Optional[FileIntegrityMonitor] = None,
         client: Optional[AgentClient] = None,
+        spool: Optional[EventSpool] = None,
     ):
         self.config = config or AgentConfig.from_env()
+
+        spool_db = self.config.spool_path or ":memory:"
+        self.spool = spool or EventSpool(
+            db_path=spool_db,
+            max_size=self.config.max_spool_size,
+            agent_id=self.config.agent_id,
+        )
 
         self.system_collector = system_collector or SystemCollector(
             agent_id=self.config.agent_id,
@@ -124,7 +142,11 @@ class AgentOrchestrator:
         self.fim_monitor = fim_monitor or FileIntegrityMonitor(
             agent_id=self.config.agent_id,
             monitored_paths=self.config.monitored_paths,
+            spool=self.spool,
         )
+        if hasattr(self.fim_monitor, "spool") and self.fim_monitor.spool is None:
+            self.fim_monitor.spool = self.spool
+
         self.client = client or AgentClient(
             server_url=self.config.server_url,
             api_token=self.config.api_token,
@@ -228,6 +250,30 @@ class AgentOrchestrator:
         # 3. File Integrity Monitoring (FIM) Task
         if force_all or (now - self.last_fim_scan_at >= self.config.fim_interval):
             try:
+                # 3a. Drain pending events from local durable spool queue first
+                drained_paths = set()
+                if self.spool:
+                    pending_spool = self.spool.get_pending_events(limit=50)
+                    for item in pending_spool:
+                        try:
+                            self.client.send_security_event(item["envelope"])
+                            self.spool.mark_acknowledged(item["message_id"])
+                            summary["fim_events_sent"] += 1
+                            envelope = item.get("envelope", {})
+                            fpath = (
+                                envelope.get("payload", {}).get("evidence", {}).get("file_path")
+                                or envelope.get("payload", {}).get("file_path")
+                                or envelope.get("file_path")
+                            )
+                            if fpath:
+                                drained_paths.add(fpath)
+                            logger.info("Spool drained pending FIM event '%s'", item["message_id"])
+                        except Exception as p_exc:
+                            self.spool.record_failure(item["message_id"])
+                            logger.warning("Spool transmission paused on event '%s': %s (will retry)", item["message_id"], p_exc)
+                            break
+
+                # 3b. Baseline initialization or delta change scan
                 if not self.fim_initialized:
                     file_count = self.fim_monitor.initialize_baseline()
                     sync_payload = self.fim_monitor.get_baseline_sync_payload()
@@ -245,16 +291,57 @@ class AgentOrchestrator:
 
                     if changes:
                         sec_events = self.fim_monitor.get_security_events(changes)
+                        # Ensure every event has a stable message_id
                         for evt in sec_events:
-                            self.client.send_security_event(evt)
-                            summary["fim_events_sent"] += 1
-                        logger.warning("FIM detected and transmitted %d file changes", len(changes))
+                            if not evt.get("message_id"):
+                                evt["message_id"] = str(uuid.uuid4())
+
+                        # Filter out events whose changes were already transmitted in step 3a
+                        events_to_send = []
+                        for evt in sec_events:
+                            fpath = (
+                                evt.get("payload", {}).get("evidence", {}).get("file_path")
+                                or evt.get("payload", {}).get("file_path")
+                                or evt.get("file_path")
+                            )
+                            if fpath and fpath in drained_paths:
+                                continue
+                            events_to_send.append(evt)
+
+                        if events_to_send:
+                            # Persist newly detected events in durable SQLite spool queue FIRST
+                            if self.spool:
+                                self.spool.enqueue_events(events_to_send)
+
+                            all_sent = True
+                            last_err = None
+                            for evt in events_to_send:
+                                try:
+                                    self.client.send_security_event(evt)
+                                    if self.spool:
+                                        self.spool.mark_acknowledged(evt.get("message_id"))
+                                    summary["fim_events_sent"] += 1
+                                except Exception as evt_exc:
+                                    all_sent = False
+                                    last_err = str(evt_exc)
+                                    if self.spool:
+                                        self.spool.record_failure(evt.get("message_id"))
+                                    logger.warning("Failed to send FIM event '%s': %s (persisted in spool)", evt.get("message_id"), evt_exc)
+
+                            if all_sent:
+                                logger.info("FIM detected and transmitted %d file changes", len(events_to_send))
+                                if new_baseline is not None and hasattr(self.fim_monitor, "commit_baseline"):
+                                    self.fim_monitor.commit_baseline(new_baseline)
+                            else:
+                                err_msg = f"FIM scan error: Failed to send FIM event: {last_err or 'network error'}"
+                                logger.warning(err_msg)
+                                summary["errors"].append(err_msg)
+                        else:
+                            # All changes already drained and transmitted; advance baseline safely
+                            if new_baseline is not None and hasattr(self.fim_monitor, "commit_baseline"):
+                                self.fim_monitor.commit_baseline(new_baseline)
                     else:
                         logger.debug("FIM scan clean, no file changes detected")
-
-                    # Only advance baseline state if all events were transmitted successfully
-                    if new_baseline is not None and hasattr(self.fim_monitor, "commit_baseline"):
-                        self.fim_monitor.commit_baseline(new_baseline)
 
                 self.last_fim_scan_at = now
             except Exception as exc:
