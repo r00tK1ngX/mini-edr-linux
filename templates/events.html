@@ -1,21 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}AUDIT LOGS // MINI-EDR SECURITY EVENT STREAM{% endblock %}
+{% block title %}NHẬT KÝ KIỂM TOÁN // MINI-EDR SECURITY AUDIT LOG{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
 <div class="page-header">
   <div>
     <div class="header-meta">
-      <span>TELEMETRY STREAM</span>
+      <span>LUỒNG DỮ LIỆU ĐO LƯỜNG</span>
       <span>•</span>
-      <span>TOTAL LOGGED EVENTS: {{ total_events }}</span>
+      <span>TỔNG SỐ SỰ KIỆN GHI NHẬN: {{ total_events }}</span>
     </div>
-    <h1 class="page-title">SECURITY <span>AUDIT LOG</span></h1>
+    <h1 class="page-title">NHẬT KÝ KIỂM TOÁN <span>AUDIT LOG</span></h1>
   </div>
   <div class="header-actions">
     <button type="button" class="btn btn-outline btn-sm" onclick="location.reload()">
-      <span>🔄</span> SYNC EVENTS
+      <span>🔄</span> ĐỒNG BỘ SỰ KIỆN
     </button>
   </div>
 </div>
@@ -24,9 +24,9 @@
 <form method="GET" action="{{ url_for('web.events') }}" class="toolbar">
   <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
     <div style="display: flex; align-items: center; gap: 0.4rem;">
-      <span class="filter-label">SEVERITY:</span>
+      <span class="filter-label">MỨC ĐỘ:</span>
       <select name="severity" class="cyber-select" onchange="this.form.submit()">
-        <option value="all" {% if severity_filter == 'all' %}selected{% endif %}>ALL SEVERITIES</option>
+        <option value="all" {% if severity_filter == 'all' %}selected{% endif %}>TẤT CẢ MỨC ĐỘ</option>
         <option value="critical" {% if severity_filter == 'critical' %}selected{% endif %}>CRITICAL</option>
         <option value="high" {% if severity_filter == 'high' %}selected{% endif %}>HIGH</option>
         <option value="medium" {% if severity_filter == 'medium' %}selected{% endif %}>MEDIUM</option>
@@ -36,9 +36,9 @@
     </div>
 
     <div style="display: flex; align-items: center; gap: 0.4rem;">
-      <span class="filter-label">EVENT TYPE:</span>
+      <span class="filter-label">LOẠI SỰ KIỆN:</span>
       <select name="event_type" class="cyber-select" onchange="this.form.submit()">
-        <option value="all" {% if event_type_filter == 'all' %}selected{% endif %}>ALL EVENT TYPES</option>
+        <option value="all" {% if event_type_filter == 'all' %}selected{% endif %}>TẤT CẢ LOẠI SỰ KIỆN</option>
         <option value="suspicious_process_spawn" {% if event_type_filter == 'suspicious_process_spawn' %}selected{% endif %}>suspicious_process_spawn</option>
         <option value="fim_sensitive_file" {% if event_type_filter == 'fim_sensitive_file' %}selected{% endif %}>fim_sensitive_file</option>
         <option value="fim_file_modified" {% if event_type_filter == 'fim_file_modified' %}selected{% endif %}>fim_file_modified</option>
@@ -48,7 +48,7 @@
     </div>
 
     {% if severity_filter != 'all' or event_type_filter != 'all' %}
-      <a href="{{ url_for('web.events') }}" class="btn btn-outline btn-sm">RESET FILTERS</a>
+      <a href="{{ url_for('web.events') }}" class="btn btn-outline btn-sm">ĐẶT LẠI BỘ LỌC</a>
     {% endif %}
   </div>
 </form>
@@ -57,23 +57,23 @@
 <div class="cyber-card">
   <div class="card-header">
     <div class="card-title">
-      <div class="dot" style="background: var(--neon-purple); box-shadow: 0 0 6px var(--neon-purple);"></div>
-      INGESTED SECURITY & INTEGRITY EVENTS ({{ events|length }})
+      <div class="dot" style="background-color: var(--purple);"></div>
+      DANH SÁCH SỰ KIỆN AN NINH & TÍNH TOÀN VẸN ({{ events|length }})
     </div>
-    <span style="color: var(--text-muted); font-size: 0.75rem;">SHOWING LATEST 100 EVENTS</span>
+    <span style="color: var(--text-muted); font-size: 0.75rem;">HIỂN THỊ 100 SỰ KIỆN MỚI NHẤT</span>
   </div>
   <div class="table-responsive">
     <table class="cyber-table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>EVENT TYPE</th>
-          <th>SEVERITY</th>
-          <th>TITLE</th>
-          <th>SOURCE</th>
-          <th>ENDPOINT</th>
-          <th>OCCURRED AT</th>
-          <th>EVIDENCE</th>
+          <th>MÃ</th>
+          <th>LOẠI SỰ KIỆN</th>
+          <th>MỨC ĐỘ</th>
+          <th>TIÊU ĐỀ</th>
+          <th>NGUỒN</th>
+          <th>MÁY TRẠM</th>
+          <th>THỜI ĐIỂM</th>
+          <th>DỮ LIỆU JSON</th>
         </tr>
       </thead>
       <tbody>
@@ -81,18 +81,18 @@
           {% for ev in events %}
             <tr>
               <td><span class="cyber-code">#{{ ev.id }}</span></td>
-              <td><span style="color: var(--neon-purple); font-weight: 700;">{{ ev.event_type }}</span></td>
+              <td><span style="color: var(--purple); font-weight: 600; font-family: var(--font-mono); font-size: 0.78rem;">{{ ev.event_type }}</span></td>
               <td><span class="badge badge-{{ ev.severity }}">{{ ev.severity|upper }}</span></td>
-              <td style="font-weight: 600; color: #fff;">{{ ev.title }}</td>
+              <td style="font-weight: 500; color: #fff;">{{ ev.title }}</td>
               <td><span class="badge badge-info" style="font-size: 0.65rem;">{{ ev.source|upper }}</span></td>
               <td><span class="cyber-code">{{ ev.agent_id }}</span></td>
               <td style="font-size: 0.72rem; color: var(--text-muted); white-space: nowrap;">{{ ev.occurred_at|format_dt }}</td>
               <td>
                 <details style="cursor: pointer;">
                   <summary class="btn btn-outline btn-sm" style="display: inline-flex; font-size: 0.7rem; padding: 0.2rem 0.5rem;">
-                    VIEW JSON
+                    XEM JSON
                   </summary>
-                  <pre class="json-viewer" style="margin-top: 0.5rem; max-width: 400px;">{{ ev.evidence_json|pretty_json }}</pre>
+                  <pre class="json-viewer" style="margin-top: 0.5rem; max-width: 420px;">{{ ev.evidence_json|pretty_json }}</pre>
                 </details>
               </td>
             </tr>
@@ -100,7 +100,7 @@
         {% else %}
           <tr>
             <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">
-              [NO SECURITY EVENTS MATCHING FILTERS]
+              [KHÔNG CÓ SỰ KIỆN AN NINH NÀO PHÙ HỢP TIÊU CHÍ LỌC]
             </td>
           </tr>
         {% endif %}

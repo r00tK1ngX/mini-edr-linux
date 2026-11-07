@@ -1,23 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MINI EDR // SOC OPERATOR AUTHENTICATION</title>
+  <title>ĐĂNG NHẬP // MINI EDR SOC OPERATOR GATEWAY</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
   <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
-<body style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem;">
-  <div class="scanlines"></div>
-
-  <div class="cyber-card" style="width: 100%; max-width: 480px; padding: 2.5rem; border: 1px solid var(--border-bright); box-shadow: var(--border-glow); background: rgba(10, 14, 23, 0.95); position: relative; z-index: 10;">
+<body style="display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem; background-color: var(--bg-main);">
+  <div class="cyber-card" style="width: 100%; max-width: 440px; padding: 2.5rem; border: 1px solid var(--border-color); background-color: var(--bg-card); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4); margin-bottom: 0;">
     <div style="text-align: center; margin-bottom: 2rem;">
-      <div style="display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: var(--neon-cyan); border-radius: 4px; margin-bottom: 1rem; box-shadow: 0 0 16px var(--neon-cyan);">
-        <span style="font-size: 24px; font-weight: 900; color: #000;">⚡</span>
+      <div style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: linear-gradient(135deg, var(--cyan) 0%, #0284C7 100%); border-radius: var(--radius-sm); margin-bottom: 1rem; box-shadow: 0 0 16px var(--cyan-glow);">
+        <span style="font-size: 22px;">🛡️</span>
       </div>
-      <h1 style="font-size: 1.5rem; letter-spacing: 0.1em; color: #fff; margin-bottom: 0.35rem;">MINI-<span>EDR</span></h1>
-      <div style="font-size: 0.75rem; letter-spacing: 0.15em; color: var(--neon-cyan); text-transform: uppercase;">// SOC COMMAND ACCESS GATEWAY //</div>
+      <h1 style="font-size: 1.45rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem; letter-spacing: 0.05em;">MINI-<span>EDR</span></h1>
+      <div style="font-size: 0.72rem; letter-spacing: 0.1em; color: var(--cyan); text-transform: uppercase; font-family: var(--font-mono); font-weight: 600;">
+        CỔNG ĐIỀU HÀNH AN NINH SOC
+      </div>
     </div>
 
     {% if error %}
@@ -42,8 +42,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ next_url or '' }}">
       <div style="margin-bottom: 1.5rem;">
-        <label for="token" style="display: block; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem;">
-          OPERATOR ACCESS TOKEN (EDR_API_TOKEN):
+        <label for="token" style="display: block; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.5rem;">
+          MÃ KHÓA XÁC THỰC CHUYÊN VIÊN (EDR_API_TOKEN):
         </label>
         <input 
           type="password" 
@@ -51,19 +51,19 @@
           name="token" 
           required 
           autocomplete="current-password"
-          placeholder="Enter access token..." 
+          placeholder="Nhập mã token bảo mật..." 
           class="cyber-input"
           style="width: 100%; font-size: 0.9rem;"
         >
       </div>
 
-      <button type="submit" class="btn btn-cyan" style="width: 100%; padding: 0.85rem; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.1em;">
-        AUTHENTICATE SESSION
+      <button type="submit" class="btn btn-cyan" style="width: 100%; padding: 0.75rem; font-weight: 700; font-size: 0.88rem; letter-spacing: 0.05em;">
+        AUTHENTICATE SESSION // ĐĂNG NHẬP
       </button>
     </form>
 
-    <div style="margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-dim); text-align: center; font-size: 0.75rem; color: var(--text-muted);">
-      <span>ACADEMIC LAB SCOPE // AUTHENTICATE WITH EDR_API_TOKEN</span>
+    <div style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle); text-align: center; font-size: 0.72rem; color: var(--text-dim);">
+      <span>MÔI TRƯỜNG PHÒNG THÍ NGHIỆM AN NINH MẠNG LINUX</span>
     </div>
   </div>
 </body>

@@ -1,103 +1,158 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}MINI EDR // CYBER SOC CONSOLE{% endblock %}</title>
+  <title>{% block title %}MINI EDR // SOC COMMAND CENTER{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
   <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body>
-  <!-- CRT Scanlines Overlay -->
-  <div class="scanlines"></div>
-
-  <!-- HUD Top Navigation -->
-  <header class="cyber-nav">
-    <div class="nav-inner">
-      <div class="brand-section">
-        <a href="{{ url_for('web.dashboard') }}" class="brand-logo">
-          <div class="brand-icon">
-            <span style="font-size: 14px; font-weight: 900; color: #000;">⚡</span>
-          </div>
+  <div class="app-layout">
+    <!-- Left Navigation Sidebar -->
+    <aside class="app-sidebar">
+      <!-- Brand Header -->
+      <div class="sidebar-brand">
+        <a href="{{ url_for('web.dashboard') }}" class="brand-link">
+          <div class="brand-shield">🛡️</div>
           <div class="brand-title">MINI-<span>EDR</span></div>
         </a>
-        <span class="brand-badge">SOC NODE // V2.0</span>
+        <span class="brand-tag">SOC v2.0</span>
       </div>
 
-      <!-- Main Navigation Tabs -->
-      <nav>
-        <ul class="nav-links">
-          <li>
-            <a href="{{ url_for('web.dashboard') }}" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
-              <span>⚡</span> OVERVIEW
-            </a>
-          </li>
-          <li>
-            <a href="{{ url_for('web.endpoints') }}" class="nav-link {% if active_page == 'endpoints' %}active{% endif %}">
-              <span>🖥️</span> ENDPOINTS
-            </a>
-          </li>
-          <li>
-            <a href="{{ url_for('web.alerts') }}" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">
-              <span>🚨</span> INCIDENTS & ALERTS
-            </a>
-          </li>
-          <li>
-            <a href="{{ url_for('web.events') }}" class="nav-link {% if active_page == 'events' %}active{% endif %}">
-              <span>📡</span> AUDIT LOGS
-            </a>
-          </li>
-        </ul>
+      <!-- Navigation Sections -->
+      <nav class="sidebar-nav">
+        <!-- Section 1: Overview -->
+        <div>
+          <div class="nav-section-title">TỔNG QUAN</div>
+          <ul class="nav-menu">
+            <li>
+              <a href="{{ url_for('web.dashboard') }}" class="nav-item-link {% if active_page == 'dashboard' %}active{% endif %}">
+                <span class="nav-icon">⚡</span>
+                <span>Tổng quan SOC</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Section 2: Security Monitoring -->
+        <div>
+          <div class="nav-section-title">GIÁM SÁT AN NINH</div>
+          <ul class="nav-menu">
+            <li>
+              <a href="{{ url_for('web.endpoints') }}" class="nav-item-link {% if active_page == 'endpoints' %}active{% endif %}">
+                <span class="nav-icon">🖥️</span>
+                <span>Máy tính đầu cuối</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('web.alerts') }}" class="nav-item-link {% if active_page == 'alerts' %}active{% endif %}">
+                <span class="nav-icon">🚨</span>
+                <span>Sự cố & Cảnh báo</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('web.events') }}" class="nav-item-link {% if active_page == 'events' %}active{% endif %}">
+                <span class="nav-icon">📡</span>
+                <span>Nhật ký sự kiện</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Section 3: System Status -->
+        <div>
+          <div class="nav-section-title">TRẠNG THÁI HỆ THỐNG</div>
+          <div class="system-status-box">
+            <div class="status-label-group">
+              <div class="pulse-dot"></div>
+              <div>
+                <div class="status-text">Hệ thống hoạt động</div>
+                <div class="status-subtext">ONLINE // SECURE</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </nav>
 
-      <!-- HUD Status / Clock -->
-      <div class="hud-status">
-        <div class="beacon">
-          <div class="beacon-dot"></div>
-          <span>GRID ACTIVE</span>
+      <!-- Sidebar Footer -->
+      <div class="sidebar-footer">
+        <div style="font-size: 0.7rem; color: var(--text-dim); text-align: center;">
+          <span>Mini EDR Linux Security Platform</span><br>
+          <span style="color: var(--cyan); font-family: var(--font-mono); font-size: 0.65rem;">Air-Gapped & Local Mode</span>
         </div>
-        <div class="hud-clock" id="hudClock">--:--:-- UTC</div>
-        {% if is_authenticated %}
-          <form method="POST" action="{{ url_for('web.logout') }}" style="display: inline; margin: 0; padding: 0;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-outline btn-sm" style="margin-left: 0.75rem; font-size: 0.7rem; padding: 0.25rem 0.5rem;" title="Terminate SOC Session">LOGOUT</button>
-          </form>
-        {% endif %}
       </div>
-    </div>
-  </header>
+    </aside>
 
-  <!-- Main Content Container -->
-  <main class="cyber-container">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div style="margin-bottom: 1.5rem;">
-          {% for category, msg in messages %}
-            <div class="cyber-toast {{ category }}" style="animation: none; margin-bottom: 0.5rem;">
-              {{ msg }}
+    <!-- Main Content & Topbar Shell -->
+    <div class="app-main">
+      <!-- Topbar Header -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <div class="topbar-breadcrumb">
+            <span>Mini EDR</span>
+            <span>/</span>
+            <span class="crumb-active">
+              {% if active_page == 'dashboard' %}Tổng quan SOC
+              {% elif active_page == 'endpoints' %}Quản lý máy trạm
+              {% elif active_page == 'alerts' %}Xử lý sự cố
+              {% elif active_page == 'events' %}Nhật ký kiểm toán
+              {% else %}Hệ thống
+              {% endif %}
+            </span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="hud-clock" id="hudClock">--:--:-- UTC</div>
+          {% if is_authenticated %}
+            <div class="operator-badge">
+              <span style="color: var(--green);">●</span>
+              <span>Chuyên viên SOC</span>
             </div>
-          {% endfor %}
+            <form method="POST" action="{{ url_for('web.logout') }}" style="display: inline; margin: 0; padding: 0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline btn-sm" title="Kết thúc phiên làm việc">
+                Đăng xuất
+              </button>
+            </form>
+          {% endif %}
         </div>
-      {% endif %}
-    {% endwith %}
+      </header>
 
-    {% block content %}{% endblock %}
+      <!-- Main Container -->
+      <main class="cyber-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div style="margin-bottom: 1.5rem;">
+              {% for category, msg in messages %}
+                <div class="cyber-toast {{ category }}" style="animation: none; margin-bottom: 0.5rem;">
+                  {{ msg }}
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
 
-    <!-- Footer -->
-    <footer class="cyber-footer">
-      <div class="footer-left">
-        <span>MINI-EDR LINUX DEFENSE PLATFORM</span>
-        <span style="color: var(--neon-cyan);">// PROTOCOL: REST API v1</span>
-      </div>
-      <div>
-        <span>AUTHENTICATED SOC OPERATOR SESSION</span>
-      </div>
-    </footer>
-  </main>
+        {% block content %}{% endblock %}
+
+        <!-- Footer -->
+        <footer class="cyber-footer">
+          <div class="footer-left">
+            <span>NỀN TẢNG PHÒNG THỦ MINI EDR LINUX</span>
+            <span style="color: var(--cyan); font-family: var(--font-mono); font-size: 0.7rem;">// REST API v1</span>
+          </div>
+          <div>
+            <span>PHIÊN LÀM VIỆC AN TOÀN ĐƯỢC XÁC THỰC</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+  </div>
 
   <!-- =========================================================================
-       MODALS DECK
+       MODALS DECK (IDs and Selectors strictly preserved for dashboard.js)
        ========================================================================= -->
 
   <!-- Evidence Inspection Modal -->
@@ -105,7 +160,7 @@
     <div class="cyber-modal">
       <div class="modal-header">
         <div class="modal-title">
-          <span>🔎</span> [SECURITY_EVIDENCE_DECK]
+          <span>🔎</span> Minh chứng điều tra an ninh
         </div>
         <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
       </div>
@@ -113,7 +168,7 @@
         <!-- Injected by JavaScript -->
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CLOSE</button>
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">Đóng</button>
       </div>
     </div>
   </div>
@@ -123,22 +178,22 @@
     <div class="cyber-modal" style="max-width: 550px;">
       <div class="modal-header">
         <div class="modal-title">
-          <span>🛡️</span> [INCIDENT_RESOLUTION_CONSOLE]
+          <span>🛡️</span> Xác nhận xử lý sự cố an ninh
         </div>
         <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="resolveModalAlertTitle" style="color: var(--neon-cyan); font-weight: 700; margin-bottom: 1rem; font-size: 0.95rem;">
-          ALERT #--
+        <div id="resolveModalAlertTitle" style="color: var(--cyan); font-weight: 700; margin-bottom: 1rem; font-size: 0.95rem;">
+          CẢNH BÁO #--
         </div>
-        <label for="resolveNoteInput" style="display: block; font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.4rem; letter-spacing: 0.08em;">
-          Resolution Note / Action Taken:
+        <label for="resolveNoteInput" style="display: block; font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.4rem; letter-spacing: 0.05em; font-weight: 600;">
+          Ghi chú xử lý / Biện pháp khắc phục:
         </label>
-        <textarea id="resolveNoteInput" class="cyber-input" style="width: 100%; min-height: 100px; resize: vertical;" placeholder="e.g. Malicious reverse shell killed, binary /tmp/evil removed, root password changed."></textarea>
+        <textarea id="resolveNoteInput" class="cyber-input" style="width: 100%; min-height: 100px; resize: vertical;" placeholder="Ví dụ: Đã tiêu diệt tiến trình reverse shell độc hại, cách ly file binary lạ trong /tmp, đổi mật khẩu tài khoản quản trị."></textarea>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CANCEL</button>
-        <button type="button" class="btn btn-green" onclick="submitResolveAlert()">CONFIRM RESOLVE</button>
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">Hủy bỏ</button>
+        <button type="button" class="btn btn-green" onclick="submitResolveAlert()">Xác nhận giải quyết</button>
       </div>
     </div>
   </div>
@@ -148,7 +203,7 @@
     <div class="cyber-modal" style="max-width: 900px;">
       <div class="modal-header">
         <div class="modal-title">
-          <span>🖥️</span> [ENDPOINT_TELEMETRY_DECK]
+          <span>🖥️</span> Thông tin giám sát máy trạm đầu cuối
         </div>
         <button type="button" class="modal-close" onclick="closeAllModals()">&times;</button>
       </div>
@@ -156,7 +211,7 @@
         <!-- Injected by JavaScript -->
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline" onclick="closeAllModals()">CLOSE</button>
+        <button type="button" class="btn btn-outline" onclick="closeAllModals()">Đóng</button>
       </div>
     </div>
   </div>

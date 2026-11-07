@@ -1,21 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}ENDPOINTS // MINI-EDR ASSET MANAGEMENT{% endblock %}
+{% block title %}MÁY TÍNH ĐẦU CUỐI // MINI-EDR ASSET MANAGEMENT{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
 <div class="page-header">
   <div>
     <div class="header-meta">
-      <span>FLEET INVENTORY</span>
+      <span>DANH MỤC THIẾT BỊ MẠNG</span>
       <span>•</span>
-      <span>TOTAL ASSETS: {{ total_count }}</span>
+      <span>TỔNG SỐ THIẾT BỊ: {{ total_count }}</span>
     </div>
-    <h1 class="page-title">ENDPOINT <span>MATRIX</span></h1>
+    <h1 class="page-title">MÁY TÍNH <span>ĐẦU CUỐI</span></h1>
   </div>
   <div class="header-actions">
     <button type="button" class="btn btn-outline btn-sm" onclick="location.reload()">
-      <span>🔄</span> REFRESH MATRIX
+      <span>🔄</span> LÀM MỚI
     </button>
   </div>
 </div>
@@ -24,27 +24,27 @@
 <div class="toolbar">
   <!-- Status Filter Chips -->
   <div class="filter-group">
-    <span class="filter-label">STATUS:</span>
+    <span class="filter-label">TRẠNG THÁI:</span>
     <a href="{{ url_for('web.endpoints', status='all', q=search_query) }}" class="filter-chip {% if status_filter == 'all' %}active{% endif %}">
-      ALL ({{ total_count }})
+      TẤT CẢ ({{ total_count }})
     </a>
-    <a href="{{ url_for('web.endpoints', status='online', q=search_query) }}" class="filter-chip {% if status_filter == 'online' %}active{% endif %}" style="border-color: rgba(0, 255, 157, 0.4);">
-      <span style="color: var(--neon-green);">●</span> ONLINE ({{ online_count }})
+    <a href="{{ url_for('web.endpoints', status='online', q=search_query) }}" class="filter-chip {% if status_filter == 'online' %}active{% endif %}">
+      <span style="color: var(--green);">●</span> ĐANG HOẠT ĐỘNG ({{ online_count }})
     </a>
-    <a href="{{ url_for('web.endpoints', status='offline', q=search_query) }}" class="filter-chip {% if status_filter == 'offline' %}active{% endif %}" style="border-color: rgba(255, 0, 85, 0.4);">
-      <span style="color: var(--neon-red);">●</span> OFFLINE ({{ offline_count }})
+    <a href="{{ url_for('web.endpoints', status='offline', q=search_query) }}" class="filter-chip {% if status_filter == 'offline' %}active{% endif %}">
+      <span style="color: var(--red);">●</span> NGOẠI TUYẾN ({{ offline_count }})
     </a>
   </div>
 
   <!-- Search Form -->
-  <form method="GET" action="{{ url_for('web.endpoints') }}" style="display: flex; gap: 0.5rem;">
+  <form method="GET" action="{{ url_for('web.endpoints') }}" style="display: flex; gap: 0.5rem; align-items: center;">
     {% if status_filter != 'all' %}
       <input type="hidden" name="status" value="{{ status_filter }}">
     {% endif %}
-    <input type="text" name="q" value="{{ search_query }}" class="cyber-input" placeholder="Search hostname, IP, agent..." style="width: 260px;">
-    <button type="submit" class="btn btn-cyan btn-sm">FIND</button>
+    <input type="text" name="q" value="{{ search_query }}" class="cyber-input" placeholder="Tìm theo tên máy, IP, agent ID..." style="width: 280px;">
+    <button type="submit" class="btn btn-cyan btn-sm">TÌM KIẾM</button>
     {% if search_query %}
-      <a href="{{ url_for('web.endpoints', status=status_filter) }}" class="btn btn-outline btn-sm">CLEAR</a>
+      <a href="{{ url_for('web.endpoints', status=status_filter) }}" class="btn btn-outline btn-sm">XÓA TÌM KIẾM</a>
     {% endif %}
   </form>
 </div>
@@ -54,25 +54,25 @@
   <div class="card-header">
     <div class="card-title">
       <div class="dot"></div>
-      ACTIVE MONITORED NODES
+      DANH SÁCH MÁY TRẠM ĐANG GIÁM SÁT
     </div>
-    <span style="color: var(--text-muted); font-size: 0.75rem;">SHOWING {{ endpoints|length }} ENDPOINTS</span>
+    <span style="color: var(--text-muted); font-size: 0.75rem;">HIỂN THỊ {{ endpoints|length }} THIẾT BỊ</span>
   </div>
   <div class="table-responsive">
     <table class="cyber-table">
       <thead>
         <tr>
-          <th>STATUS</th>
-          <th>HOSTNAME</th>
+          <th>TRẠNG THÁI</th>
+          <th>TÊN THIẾT BỊ</th>
           <th>AGENT ID</th>
-          <th>IP ADDRESS</th>
-          <th>OPERATING SYSTEM</th>
+          <th>ĐỊA CHỈ IP</th>
+          <th>HỆ ĐIỀU HÀNH</th>
           <th>CPU%</th>
           <th>RAM%</th>
           <th>DISK%</th>
           <th>UPTIME</th>
-          <th>LAST HEARTBEAT</th>
-          <th>TELEMETRY</th>
+          <th>HEARTBEAT CUỐI</th>
+          <th>THAO TÁC</th>
         </tr>
       </thead>
       <tbody>
@@ -84,16 +84,16 @@
                   {% if ep.status == 'online' %}●{% endif %} {{ ep.status|upper }}
                 </span>
               </td>
-              <td style="font-weight: 700; color: #fff;">
+              <td style="font-weight: 600; color: #fff;">
                 {{ ep.hostname }}
               </td>
               <td><span class="cyber-code">{{ ep.agent_id }}</span></td>
-              <td><span style="color: var(--text-cyan);">{{ ep.ip_address }}</span></td>
+              <td><span style="color: var(--cyan); font-family: var(--font-mono); font-size: 0.8rem;">{{ ep.ip_address }}</span></td>
               <td><span style="font-size: 0.75rem; color: var(--text-secondary);">{{ ep.os }}</span></td>
               
               <!-- CPU meter -->
               <td style="min-width: 90px;">
-                <div style="font-size: 0.75rem; font-weight: 700; color: {% if ep.cpu_percent and ep.cpu_percent > 85 %}var(--neon-red){% else %}#fff{% endif %};">
+                <div style="font-size: 0.75rem; font-weight: 600; color: {% if ep.cpu_percent and ep.cpu_percent > 85 %}var(--red){% else %}#fff{% endif %}; margin-bottom: 0.25rem;">
                   {{ ep.cpu_percent|round(1) if ep.cpu_percent is not none else '0.0' }}%
                 </div>
                 <div class="progress-track" style="height: 4px;">
@@ -103,7 +103,7 @@
 
               <!-- RAM meter -->
               <td style="min-width: 90px;">
-                <div style="font-size: 0.75rem; font-weight: 700; color: {% if ep.memory_percent and ep.memory_percent > 85 %}var(--neon-red){% else %}#fff{% endif %};">
+                <div style="font-size: 0.75rem; font-weight: 600; color: {% if ep.memory_percent and ep.memory_percent > 85 %}var(--red){% else %}#fff{% endif %}; margin-bottom: 0.25rem;">
                   {{ ep.memory_percent|round(1) if ep.memory_percent is not none else '0.0' }}%
                 </div>
                 <div class="progress-track" style="height: 4px;">
@@ -113,7 +113,7 @@
 
               <!-- Disk meter -->
               <td style="min-width: 80px;">
-                <div style="font-size: 0.75rem; color: #fff;">
+                <div style="font-size: 0.75rem; color: #fff; margin-bottom: 0.25rem;">
                   {{ ep.disk_percent|round(1) if ep.disk_percent is not none else '0.0' }}%
                 </div>
                 <div class="progress-track" style="height: 4px;">
@@ -131,7 +131,7 @@
 
               <td>
                 <button type="button" class="btn btn-cyan btn-sm btn-inspect-endpoint" data-agent-id="{{ ep.agent_id }}">
-                  INSPECT
+                  Kiểm tra
                 </button>
               </td>
             </tr>
@@ -139,7 +139,7 @@
         {% else %}
           <tr>
             <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 3rem;">
-              [NO MATCHING ENDPOINTS FOUND IN INVENTORY]
+              [KHÔNG TÌM THẤY MÁY TRẠM NÀO PHÙ HỢP TIÊU CHÍ]
             </td>
           </tr>
         {% endif %}
