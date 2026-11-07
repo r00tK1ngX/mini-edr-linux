@@ -1,12 +1,12 @@
 # Mini EDR for Linux – API Specification
 
 **API version:** v1  
-**Specification revision:** 2.0  
-**Status:** Implemented & Production-Verified (Phase 1 through Phase 8)  
+**Specification revision:** 2.1  
+**Status:** Implemented & Production-Verified (Phase 1 through Phase 10 Post-Audit)  
 **Base path:** `/api/v1`  
 **Transport:** HTTP in the isolated lab; HTTPS is required outside the lab  
 **Request/response media type:** `application/json`  
-**Maximum request body:** 64 KiB (current Flask configuration)
+**Maximum request body:** 16 MiB default (configurable via `EDR_MAX_CONTENT_LENGTH`)
 
 ---
 
@@ -14,7 +14,7 @@
 
 This document specifies the HTTP REST interface between Linux Agents, the Mini EDR Server, and authorized SOC operators, as well as the Web Dashboard endpoints.
 
-All routes documented herein are fully implemented and verified via automated test suites. Telemetry ingestion routes follow the data contract defined in `docs/DATA_CONTRACT.md`.
+All routes documented herein are fully implemented and verified via automated test suites (230/230 passing tests). Telemetry ingestion routes follow the data contract defined in `docs/DATA_CONTRACT.md`.
 
 ## 2. Conventions
 
@@ -28,9 +28,10 @@ http://127.0.0.1:5000
 
 The Flask development server currently binds to loopback by default. For communication beyond a trusted lab network, deploy behind TLS and do not expose the development server directly to the Internet.
 
-### 2.2. Authentication
+### 2.2. Authentication & Authorization
 
-All routes under `/api/v1/*` require a Bearer Token:
+#### 2.2.1. Ingestion & API Authentication (Bearer Token)
+All programmatic routes under `/api/v1/*` require an `Authorization` header containing the Bearer Token:
 
 ```http
 Authorization: Bearer <EDR_API_TOKEN>
@@ -38,23 +39,23 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Current implementation:
-
-- Uses one shared `EDR_API_TOKEN`.
-- Protects every route registered under the `/api/v1` blueprint.
+- Uses `EDR_API_TOKEN` ($\ge 32$ characters in production mode).
+- Verified via constant-time comparison (`hmac.compare_digest()`) to prevent timing attacks.
 - Returns HTTP 401 when the token is missing or invalid.
-- Does not bind the shared token to an individual `agent_id`.
-- Does not provide separate Agent and Administrator roles.
 
-**Security limitation / implementation requirement:** a shared Agent token must not become the long-term authorization mechanism for administrative Alert actions. Before enabling alert acknowledgement/resolution outside a single-user lab, introduce an operator identity/role or a separate administrative credential and authorize those actions explicitly. Until then, alert-management routes are design-only and must not be exposed as Agent capabilities.
+#### 2.2.2. Web Console Authentication & CSRF Protection
+The Web Dashboard (`/dashboard`, `/endpoints`, `/alerts`, `/events`) is protected by Operator Session Authentication:
+- Operators authenticate at `/login` using the configured access token.
+- Successful authentication establishes an HTTP session secured with `SECRET_KEY`.
+- State-changing Alert actions (`POST /api/v1/alerts/<id>/acknowledge`, `/resolve`, `/dismiss`) executed from the Web Console require a valid CSRF token passed via the `X-CSRF-Token` header.
 
-`GET /health` is outside the `/api/v1` blueprint and is unauthenticated in the current implementation.
+`GET /health` is outside the `/api/v1` blueprint and is public.
 
-### 2.3. JSON and size
+### 2.3. JSON and Size Limits
 
 - Send a JSON object with `Content-Type: application/json`.
-- Invalid JSON, non-object request bodies, or invalid fields are rejected.
-- Current Flask `MAX_CONTENT_LENGTH` is 64 KiB. Oversized requests receive HTTP 413.
+- Invalid JSON, non-object request bodies, or invalid fields are rejected with HTTP 400.
+- Current Flask `MAX_CONTENT_LENGTH` defaults to 16 MiB (16,777,216 bytes) to accept large Linux process snapshot tables without truncation. Oversized requests receive HTTP 413.
 - Do not send secrets, API tokens, passwords, private keys, or environment variables in telemetry/evidence.
 
 ### 2.4. Timestamp and identifier conventions

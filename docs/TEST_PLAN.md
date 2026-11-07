@@ -1,11 +1,11 @@
 # Mini EDR Linux --- Kế hoạch và Báo cáo Kiểm thử Hệ thống (Test Plan & Matrix)
 
 **Tài liệu:** Test Plan & Verification Matrix  
-**Phiên bản:** 2.0  
-**Ngày cập nhật:** 05/11/2026  
+**Phiên bản:** 2.1 (Phases 1-10 Post-Audit Finalized)  
+**Ngày cập nhật:** 06/11/2026  
 **Dự án:** Mini Endpoint Detection and Response for Linux  
 **Repository:** `r00tK1ngX/mini-edr-linux`  
-**Kết quả thực tế:** **214/214 tests PASSED (100%)** trong thời gian ~12.5 giây  
+**Kết quả thực tế:** **230/230 tests PASSED (100%)** trong thời gian ~17.9 giây  
 
 ---
 
@@ -80,9 +80,12 @@ Kế hoạch kiểm thử nhằm đảm bảo toàn diện các mục tiêu ch�
 | `test_file_integrity.py` | `test_detect_file_created` | Phát hiện tệp mới | Tạo tệp mới trong thư mục | Trả về sự kiện `created` | **PASS** |
 | `test_file_integrity.py` | `test_detect_file_modified`| Phát hiện tệp bị sửa | Thay đổi nội dung tệp | Trả về sự kiện `modified` kèm hash mới | **PASS** |
 | `test_file_integrity.py` | `test_detect_file_deleted` | Phát hiện tệp bị xóa | Xóa tệp giám sát | Trả về sự kiện `deleted` (state: missing) | **PASS** |
+| `test_file_integrity.py` | `test_fim_symlink_traversal_protection` | Chống tấn công vượt quyền qua symlink | Tạo symlink trỏ tệp nhạy cảm | Từ chối băm symlink giả mạo via `os.lstat` | **PASS** |
+| `test_file_integrity.py` | `test_fim_quick_check_caching` | Tối ưu hiệu năng băm bằng cache mtime | Tệp không đổi kích thước & mtime | Tái sử dụng hash cũ, tiết kiệm I/O ổ đĩa | **PASS** |
 | `test_agent_client.py` | `test_envelope_creation` | Đóng gói bản tin hợp lệ | Payload telemetry thô | Có UUIDv4 `message_id`, ISO 8601 UTC | **PASS** |
 | `test_agent_client.py` | `test_send_heartbeat_auth` | Gửi heartbeat có Bearer Token | Cấu hình API token | Header `Authorization: Bearer <token>` | **PASS** |
 | `test_agent_orchestrator.py`| `test_scheduled_cycles` | Điều phối chu kỳ quét | Tần suất chu kỳ 5s/10s | Kích hoạt các collector đúng hẹn | **PASS** |
+| `test_agent_orchestrator.py`| `test_orchestrator_fim_event_retention_on_network_failure` | Two-phase commit FIM khi đứt mạng | Mô phỏng Server 500 / Network drop | Giữ nguyên baseline, gửi lại sự kiện | **PASS** |
 
 ### 3.2. Phân hệ API Server & Ingestion (`server/routes.py`)
 
@@ -98,7 +101,9 @@ Kế hoạch kiểm thử nhằm đảm bảo toàn diện các mục tiêu ch�
 | `test_api.py` | `test_events_ingest` | Tiếp nhận security event | `POST /events` | HTTP 201 Created | **PASS** |
 | `test_api.py` | `test_invalid_schema_ver` | Chặn phiên bản contract sai | `schema_version: "2.0"` | HTTP 400 Bad Request | **PASS** |
 | `test_api.py` | `test_invalid_uuid` | Chặn message_id không phải UUID | `message_id: "123"` | HTTP 400 Bad Request | **PASS** |
-| `test_api.py` | `test_payload_too_large` | Chặn payload vượt 64KB | Body chuỗi $> 64$ KB | HTTP 413 Request Entity Too Large | **PASS** |
+| `test_api.py` | `test_payload_too_large` | Chặn payload vượt ngưỡng cấu hình | Body chuỗi $> 64$ KB (configured) | HTTP 413 Request Entity Too Large | **PASS** |
+| `test_api.py` | `test_default_max_content_length_accepts_large_process_snapshot` | Chấp nhận snapshot tiến trình lớn 16MB | Body snapshot dung lượng cao | HTTP 201 Created | **PASS** |
+| `test_api.py` | `test_create_app_rejects_weak_token_in_production` | Chặn token yếu trong môi trường prod | Token $< 32$ ký tự hoặc placeholder | Ném lỗi `ValueError` tại factory | **PASS** |
 
 ### 3.3. Phân hệ Cơ sở Dữ liệu & DAL (`server/repositories/`, `server/migrations/`)
 
@@ -107,21 +112,27 @@ Kế hoạch kiểm thử nhằm đảm bảo toàn diện các mục tiêu ch�
 | `test_database.py` | `test_connection_wal_mode`| Xác thực cơ chế ghi WAL | Khởi tạo kết nối SQLite | `PRAGMA journal_mode = wal` | **PASS** |
 | `test_database.py` | `test_foreign_keys_on` | Xác thực thực thi khóa ngoại | Khởi tạo kết nối SQLite | `PRAGMA foreign_keys = 1` | **PASS** |
 | `test_repositories.py` | `test_endpoint_upsert` | Cập nhật endpoint idempotent | 2 heartbeat cùng agent_id | 1 bản ghi duy nhất, update `last_seen`| **PASS** |
+| `test_repositories.py` | `test_endpoint_heartbeat_coalesce_preserves_metadata` | Bảo tồn metadata máy trạm qua COALESCE | Heartbeat thiếu metadata | Giữ nguyên metadata cũ, không ghi đè NULL | **PASS** |
 | `test_repositories.py` | `test_process_cascade_del`| Xóa tầng cascade observation | Xóa snapshot ID | Tự động xóa các observations con | **PASS** |
 | `test_repositories.py` | `test_fim_missing_state` | Bảo toàn lịch sử hash FIM | Tệp bị xóa khỏi máy trạm | Cập nhật `state = 'missing'` | **PASS** |
+| `test_repositories.py` | `test_alert_severity_escalation_and_non_downgrade` | Chống hạ cấp độ nghiêm trọng Alert | Ghi nhận event severity thấp hơn | Mức độ nghiêm trọng giữ nguyên/leo thang | **PASS** |
 | `test_migrations.py` | `test_apply_all_migrations`| Áp dụng toàn bộ migration | Schema scripts `.sql` | Bảng được tạo đủ, checksum hợp lệ | **PASS** |
 | `test_migrations.py` | `test_tampered_migration` | Chặn sửa file migration cũ | Sửa checksum file SQL | Phát hiện gian lận và dừng khởi động | **PASS** |
 | `test_migrations.py` | `test_transaction_rollback`| Rollback khi migration lỗi | File SQL chứa cú pháp sai | Rollback toàn bộ, database nguyên vẹn | **PASS** |
 
-### 3.4. Phân hệ Detection Engine (`server/detection/`)
+### 3.4. Phân hệ Detection Engine (`detection/`)
 
 | Test File | Test Case | Mục đích & Mô tả | Dữ liệu đầu vào | Kết quả mong đợi | Thực tế |
 |---|---|---|---|---|---|
 | `test_detection.py` | `test_detect_netcat` | Phát hiện công cụ netcat | Tiến trình `nc -lvnp 4444` | Tạo event `RULE_SUSPICIOUS_PROCESS` | **PASS** |
 | `test_detection.py` | `test_detect_tmp_binary` | Phát hiện binary trong `/tmp` | Tiến trình `/tmp/malware` | Kích hoạt cảnh báo mức `CRITICAL` | **PASS** |
 | `test_detection.py` | `test_detect_shell_spawn`| Phát hiện reverse shell | `apache2` sinh `sh` | Kích hoạt `RULE_SHELL_SPAWN` | **PASS** |
+| `test_detection.py` | `test_rule_proc_shell_spawn_detects_web_daemon_shell` | Shell sinh từ dịch vụ web daemon | Tiến trình `sh` dưới user `www-data` | Tạo event `rule-proc-shell-spawn` (HIGH) | **PASS** |
+| `test_detection.py` | `test_rule_fim_dropped_binary_detects_new_executables_in_temp_dir` | Bắt dropped binary trong `/tmp` | Tệp mới `/tmp/dropper.elf` | Tạo event `rule-fim-dropped-binary` (HIGH) | **PASS** |
 | `test_detection.py` | `test_detect_shadow_mod` | Phát hiện can thiệp `/etc/shadow`| FIM event sửa `/etc/shadow` | Kích hoạt `RULE_FIM_SENSITIVE_FILE` | **PASS** |
 | `test_detection.py` | `test_correlation_score` | Tính toán điểm rủi ro tương quan| FIM mod + Suspicious process | Risk score $> 85$, mức `CRITICAL` | **PASS** |
+| `test_detection.py` | `test_correlation_min_score_threshold_enforced` | Ngưỡng tương quan tối thiểu | Chuỗi vi phạm điểm thấp $< 60$ | Không sinh Correlated Alert rác | **PASS** |
+| `test_detection.py` | `test_fim_dropped_binary_and_process_exec_correlation_e2e` | Tương quan Dropped Binary + Thực thi | Dropper ELF + chạy tiến trình | Kích hoạt Alert tổng hợp `CRITICAL` | **PASS** |
 | `test_detection.py` | `test_alert_dedup` | Khử trùng cảnh báo theo key | 3 sự kiện cùng một nguyên nhân| 1 Alert duy nhất, 3 events liên kết | **PASS** |
 
 ### 3.5. Phân hệ Quản lý Cảnh báo & Incident Management (`server/routes.py`)
@@ -170,10 +181,21 @@ Kế hoạch kiểm thử nhằm đảm bảo toàn diện các mục tiêu ch�
 |---|---|---|---|---|
 | **Database Integrity** | 2 | Chạy `PRAGMA integrity_check` và `PRAGMA foreign_key_check` trên DB chứa dữ liệu thật | Trả về `ok`, không có bản ghi mồ côi | **PASS** |
 | **SQL Injection** | 7 | Thử nghiệm các vector SQLi: `' OR '1'='1`, `'; DROP TABLE endpoints; --`, `UNION SELECT` trên mọi tham số query và filter (`status`, `severity`, `agent_id`, `rule_id`, `file_path`, pagination) | 100% Parameterized DAL, không bị lỗi cú pháp SQL, không rò rỉ dữ liệu trái phép | **PASS** |
-| **XSS Sanitization** | 4 | Thử nghiệm payload XSS: `<script>alert(1)</script>`, `<img src=x onerror=alert(1)>` trong tên endpoint, title cảnh báo, description và resolution note | Escape an toàn trong HTML và JSON; không bị chèn mã độc vào DOM | **PASS** |
-| **Token Confidentiality**| 2 | Kiểm tra nhật ký server khi request thành công hoặc thất bại; xác minh token không xuất hiện trong stdout/stderr logs | Bearer Token được che giấu/redacted an toàn | **PASS** |
-| **Input Validation** | 3 | Gửi payload vượt 64KB, CPU $< 0$ hoặc $> 100$, NaN, Infinity, sai kiểu dữ liệu | Trả về HTTP 413 hoặc HTTP 400, từ chối dữ liệu rác | **PASS** |
+| **DOM XSS & Attribute Sanitization** | 6 | Thử nghiệm payload XSS trong DOM và thuộc tính thẻ HTML: `<script>alert(1)</script>`, `"><img src=x onerror=alert(1)>`, `javascript:...` trong tên endpoint, title cảnh báo, description, evidence và resolution note | Khử khuẩn an toàn qua `escapeHtml()` và Jinja2 autoescape; loại bỏ inline handlers | **PASS** |
+| **Console Authentication & CSRF** | 3 | Truy cập Web Console khi chưa đăng nhập; Gửi request thay đổi trạng thái Alert (`ACK`, `RESOLVE`, `DISMISS`) khi thiếu hoặc sai token CSRF | Chuyển hướng `/login` hoặc trả về HTTP 403 Forbidden; bảo vệ an toàn phiên làm việc | **PASS** |
+| **Token Confidentiality & Secret Key** | 3 | Kiểm tra nhật ký server; kiểm tra token độ dài $\ge 32$ ký tự; kiểm tra ký phiên session với SECRET_KEY | Bearer Token được che giấu/redacted an toàn, khóa phiên vững chắc | **PASS** |
+| **Input Validation & Bound Limits** | 2 | Gửi payload vượt 64KB, CPU $< 0$ hoặc $> 100$, NaN, Infinity, sai kiểu dữ liệu | Trả về HTTP 413 hoặc HTTP 400, từ chối dữ liệu rác | **PASS** |
 | **Idempotency** | 2 | Gửi lại bản tin trùng `message_id`: (1) Cùng nội dung, (2) Khác nội dung (Replay/tampering) | Cùng nội dung: HTTP 200 duplicate; Khác nội dung: HTTP 409 conflict | **PASS** |
+
+### 3.9. Kiểm thử Thực nghiệm Kịch bản Tấn công Live Demo (`scripts/simulate_attack_scenario.py`)
+
+| Bước Demo | Mục tiêu & Hành vi | Tương tác Endpoint / Server | Kết quả Ghi nhận | Thực tế |
+|---|---|---|---|---|
+| **Bước 1** | Đăng ký máy trạm & gửi Heartbeat đầu tiên | `POST /api/v1/heartbeat` | HTTP 200, Endpoint `demo-workstation-01` Online | **PASS** |
+| **Bước 2** | Thiết lập FIM Baseline tệp cấu hình `/tmp/mini_edr_demo/secure_config.conf` | `POST /api/v1/file-baselines` | HTTP 200, lưu SHA-256 ban đầu | **PASS** |
+| **Bước 3** | Tấn công sửa tệp nhạy cảm chèn `PERMIT_ROOT_LOGIN=yes` | `POST /api/v1/events` | HTTP 201, kích hoạt Alert `HIGH` FIM Tampering | **PASS** |
+| **Bước 4** | Mô phỏng chạy tiến trình độc hại `/tmp/nc -lvnp 4444` | `POST /api/v1/telemetry/processes` | HTTP 201, phát hiện `RULE_SUSPICIOUS_PROCESS`, gán Risk Score 90/100 (`CRITICAL`) | **PASS** |
+| **Bước 5** | Tổng kết Alert và hướng dẫn SOC Triage trên Web Console | `GET /api/v1/alerts/summary` | HTTP 200, thống kê 6 Alerts (4 active), hướng dẫn Evidence/ACK/RESOLVE | **PASS** |
 
 ---
 
@@ -181,7 +203,7 @@ Kế hoạch kiểm thử nhằm đảm bảo toàn diện các mục tiêu ch�
 
 Toàn bộ các test cases đều chạy độc lập, tự động khởi tạo cơ sở dữ liệu SQLite trong bộ nhớ tạm (`:memory:` hoặc file temp cô lập), không làm ảnh hưởng đến dữ liệu đang vận hành.
 
-### 4.1. Lệnh chạy toàn bộ 214 test cases
+### 4.1. Lệnh chạy toàn bộ 230 test cases
 
 ```bash
 cd /home/kali/Projects/mini-edr-linux
@@ -197,8 +219,8 @@ cd /home/kali/Projects/mini-edr-linux
 # 2. Chạy riêng kiểm thử Ingestion APIs & DAL
 .venv/bin/pytest tests/test_api.py tests/test_repositories.py tests/test_database.py -v
 
-# 3. Chạy riêng kiểm thử Detection Engine
-.venv/bin/pytest tests/test_detection.py -v
+# 3. Chạy riêng kiểm thử Detection Engine & Correlation
+.venv/bin/pytest tests/test_detection.py tests/test_correlation.py -v
 
 # 4. Chạy riêng kiểm thử Alert Management & Web Dashboard
 .venv/bin/pytest tests/test_alert_management.py tests/test_dashboard.py -v
@@ -207,6 +229,11 @@ cd /home/kali/Projects/mini-edr-linux
 .venv/bin/pytest tests/test_full_system_e2e.py -v
 
 # 6. Chạy riêng kiểm thử An ninh & Độ tin cậy (Security & Reliability)
+.venv/bin/pytest tests/test_security_reliability.py -v
+
+# 7. Chạy mô phỏng kịch bản tấn công thực tế trên Server đang chạy
+.venv/bin/python scripts/simulate_attack_scenario.py --auto
+```
 .venv/bin/pytest tests/test_security_reliability.py -v
 ```
 

@@ -69,6 +69,7 @@ class CorrelationEngine:
             has_high_cpu = "rule-process-high-cpu" in rule_ids
             has_high_mem = "rule-process-high-memory" in rule_ids
             has_hidden = "rule-process-hidden-binary" in rule_ids
+            has_shell_spawn = "rule-proc-shell-spawn" in rule_ids
 
             if has_suspicious_path:
                 score += 50
@@ -84,6 +85,14 @@ class CorrelationEngine:
                     "factor": "hidden_executable",
                     "score": 40,
                     "description": f"Process '{proc_name}' or its binary is hidden",
+                })
+
+            if has_shell_spawn:
+                score += 50
+                factors.append({
+                    "factor": "suspicious_shell_spawn",
+                    "score": 50,
+                    "description": f"Process '{proc_name}' is an interactive shell spawned in daemon context",
                 })
 
             if has_high_cpu:
@@ -124,10 +133,19 @@ class CorrelationEngine:
             total_score = min(100, score)
 
             # Correlation decision:
-            # Multi-stage detection: requires at least 2 distinct factors (e.g. suspicious path + resource spike or FIM drop)
-            if len(factors) >= 2:
+            # Multi-stage detection: requires at least 2 distinct factors and reaches min_correlation_score
+            if len(factors) >= 2 and total_score >= self.min_correlation_score:
                 severity = "critical" if total_score >= 85 else "high"
                 alert_key = f"{agent_id}:correlated:proc:{pid}:{proc_name}"
+
+                mitre_tags = set()
+                for d in detections:
+                    if getattr(d, "mitre_attack", None):
+                        mitre_tags.add(d.mitre_attack)
+                for fd in matching_fim:
+                    if getattr(fd, "mitre_attack", None):
+                        mitre_tags.add(fd.mitre_attack)
+                mitre_str = " / ".join(sorted(mitre_tags)) if mitre_tags else "T1059 / T1105 / T1496"
 
                 finding = CorrelatedFinding(
                     alert_key=alert_key,
@@ -147,6 +165,7 @@ class CorrelationEngine:
                         "exe_path": exe_path,
                         "factors": factors,
                         "total_risk_score": total_score,
+                        "mitre_attack": mitre_str,
                     },
                     event_ids=event_ids,
                 )

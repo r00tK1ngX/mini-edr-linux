@@ -16,6 +16,7 @@ def app(tmp_path):
         "EDR_API_TOKEN": TOKEN,
         "DATABASE_PATH": str(database_path),
         "OFFLINE_AFTER_SECONDS": 15,
+        "MAX_CONTENT_LENGTH": 64 * 1024,
     })
     application.config["TEST_DATABASE_PATH"] = database_path
     return application
@@ -690,4 +691,85 @@ def test_alerts_query_and_lifecycle(client, app):
     res_ack_after_res = client.post(f"/api/v1/alerts/{alert_id}/acknowledge", headers=auth_headers())
     assert res_ack_after_res.status_code == 400
     assert "cannot be acknowledged" in res_ack_after_res.get_json()["error"]
+
+
+def test_default_max_content_length_accepts_large_process_snapshot(tmp_path):
+    """Default server configuration accepts large process telemetry snapshots (>100KB, 500 processes)."""
+    db_path = tmp_path / "large_payload_test.db"
+    default_app = create_app({
+        "TESTING": True,
+        "EDR_API_TOKEN": TOKEN,
+        "DATABASE_PATH": str(db_path),
+        "OFFLINE_AFTER_SECONDS": 15,
+        # Omit MAX_CONTENT_LENGTH to verify default (16MB)
+    })
+    test_client = default_app.test_client()
+
+    # Register endpoint first
+    post_heartbeat(test_client)
+
+    # Build large process snapshot with 500 processes (> 100KB payload)
+    processes = [
+        {
+            "pid": pid,
+            "ppid": 1,
+            "process_name": f"worker_proc_{pid}",
+            "exe_path": f"/usr/bin/worker_{pid}",
+            "username": "daemon",
+            "cpu_percent": 0.1,
+            "memory_percent": 0.2,
+            "rss_bytes": 1048576,
+            "process_started_at": "2026-11-05T08:00:00.000Z",
+        }
+        for pid in range(100, 600)
+    ]
+
+    snapshot_envelope = sample_envelope(payload={
+        "process_count": len(processes),
+        "processes": processes,
+    })
+
+    # Verify request payload is > 70KB (which would exceed legacy 64KB limit)
+    import json
+    raw_bytes = json.dumps(snapshot_envelope).encode("utf-8")
+    assert len(raw_bytes) > 70 * 1024
+
+    resp = test_client.post(
+        "/api/v1/telemetry/processes",
+        json=snapshot_envelope,
+        headers=auth_headers(),
+    )
+    assert resp.status_code == 201
+    assert resp.get_json()["success"] is True
+
+
+def test_create_app_rejects_weak_token_in_production(tmp_path):
+    """Factory validates token strength (must be >= 32 chars and not default placeholder) when not in test mode."""
+    db_file = tmp_path / "prod_check.db"
+
+    # 1. Short token in non-TESTING mode raises ValueError
+    with pytest.raises(ValueError, match="too weak"):
+        create_app({
+            "TESTING": False,
+            "EDR_API_TOKEN": "short-token",
+            "DATABASE_PATH": str(db_file),
+        })
+
+    # 2. Placeholder token raises ValueError
+    with pytest.raises(ValueError, match="too weak"):
+        create_app({
+            "TESTING": False,
+            "EDR_API_TOKEN": "replace-with-a-long-random-token",
+            "DATABASE_PATH": str(db_file),
+        })
+
+    # 3. Strong 32-char token succeeds
+    strong_app = create_app({
+        "TESTING": False,
+        "EDR_API_TOKEN": "a" * 32,
+        "DATABASE_PATH": str(db_file),
+    })
+    assert strong_app is not None
+
+
 

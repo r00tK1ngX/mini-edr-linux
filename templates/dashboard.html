@@ -226,16 +226,16 @@
               <td style="font-size: 0.75rem; color: var(--text-muted);">{{ a.first_seen_at|format_dt }}</td>
               <td id="actions-{{ a.id }}">
                 <div style="display: flex; gap: 0.35rem;">
-                  <button type="button" class="btn btn-cyan btn-sm" onclick="viewEvidence({{ a.id }})">
+                  <button type="button" class="btn btn-cyan btn-sm btn-view-evidence" data-alert-id="{{ a.id }}">
                     EVIDENCE
                   </button>
                   {% if a.status == 'new' %}
-                    <button type="button" id="btn-ack-{{ a.id }}" class="btn btn-amber btn-sm" onclick="acknowledgeAlert({{ a.id }})">
+                    <button type="button" id="btn-ack-{{ a.id }}" class="btn btn-amber btn-sm btn-acknowledge" data-alert-id="{{ a.id }}">
                       ACK
                     </button>
                   {% endif %}
                   {% if a.status != 'resolved' %}
-                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, '{{ a.title|escape }}')">
+                    <button type="button" class="btn btn-green btn-sm btn-prompt-resolve" data-alert-id="{{ a.id }}" data-alert-title="{{ a.title }}">
                       RESOLVE
                     </button>
                   {% else %}

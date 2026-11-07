@@ -376,7 +376,7 @@ def ingest_process_telemetry():
         if ppid is not None and (not isinstance(ppid, int) or isinstance(ppid, bool) or ppid < 0):
             return _error("ppid must be an integer >= 0 or null")
 
-        process_name = proc.get("process_name")
+        process_name = proc.get("process_name") or proc.get("name")
         if not isinstance(process_name, str) or not process_name.strip():
             return _error("process_name must be a non-empty string")
 

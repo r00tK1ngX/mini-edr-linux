@@ -21,7 +21,46 @@ document.addEventListener("DOMContentLoaded", () => {
       closeAllModals();
     }
   });
+
+  // 3. Delegated action button handlers (Prevents inline attribute injection)
+  document.addEventListener("click", (e) => {
+    const viewBtn = e.target.closest(".btn-view-evidence");
+    if (viewBtn) {
+      viewEvidence(viewBtn.dataset.alertId);
+      return;
+    }
+
+    const ackBtn = e.target.closest(".btn-acknowledge");
+    if (ackBtn) {
+      acknowledgeAlert(ackBtn.dataset.alertId);
+      return;
+    }
+
+    const resolveBtn = e.target.closest(".btn-prompt-resolve");
+    if (resolveBtn) {
+      promptResolveAlert(resolveBtn.dataset.alertId, resolveBtn.dataset.alertTitle);
+      return;
+    }
+
+    const dismissBtn = e.target.closest(".btn-dismiss");
+    if (dismissBtn) {
+      dismissAlert(dismissBtn.dataset.alertId);
+      return;
+    }
+
+    const inspectBtn = e.target.closest(".btn-inspect-endpoint");
+    if (inspectBtn) {
+      inspectEndpoint(inspectBtn.dataset.agentId);
+      return;
+    }
+  });
 });
+
+// CSRF Token helper
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute("content") : "";
+}
 
 // Toast notification helper
 function showToast(message, type = "info") {
@@ -34,7 +73,7 @@ function showToast(message, type = "info") {
     <div style="font-weight: 700; text-transform: uppercase; font-size: 0.75rem; margin-bottom: 0.2rem; color: var(--neon-cyan);">
       // SYSTEM_NOTIFICATION
     </div>
-    <div>${message}</div>
+    <div>${escapeHtml(message)}</div>
   `;
   container.appendChild(toast);
 
@@ -66,7 +105,10 @@ async function acknowledgeAlert(alertId) {
   try {
     const res = await fetch(`/alerts/${alertId}/acknowledge`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": getCsrfToken(),
+      },
       body: JSON.stringify({ note: "Acknowledged via Web SOC Console" }),
     });
     const data = await res.json();
@@ -108,7 +150,10 @@ async function submitResolveAlert() {
   try {
     const res = await fetch(`/alerts/${activeResolveAlertId}/resolve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": getCsrfToken(),
+      },
       body: JSON.stringify({ resolution_note: note || "Resolved via Web SOC Console" }),
     });
     const data = await res.json();
@@ -140,7 +185,10 @@ async function dismissAlert(alertId) {
   try {
     const res = await fetch(`/alerts/${alertId}/dismiss`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": getCsrfToken(),
+      },
       body: JSON.stringify({ resolution_note: "Dismissed by operator (false positive / ignored)" }),
     });
     const data = await res.json();
@@ -189,12 +237,12 @@ async function viewEvidence(alertId) {
       eventsHtml = events.map(ev => `
         <div style="background: rgba(0,0,0,0.4); border: 1px solid rgba(0,240,255,0.15); border-radius: 4px; padding: 0.85rem; margin-bottom: 0.75rem;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
-            <span style="font-weight: 700; color: var(--neon-cyan); font-size: 0.8rem;">EVENT #${ev.id}: ${ev.event_type}</span>
-            <span class="badge badge-${ev.severity}">${ev.severity.toUpperCase()}</span>
+            <span style="font-weight: 700; color: var(--neon-cyan); font-size: 0.8rem;">EVENT #${escapeHtml(ev.id)}: ${escapeHtml(ev.event_type)}</span>
+            <span class="badge badge-${escapeHtml(ev.severity)}">${escapeHtml(ev.severity.toUpperCase())}</span>
           </div>
-          <div style="font-size: 0.8rem; color: #fff; margin-bottom: 0.5rem;">${ev.title || "Untitled"}</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Occurred: ${ev.occurred_at}</div>
-          <pre class="json-viewer">${formatJsonString(ev.evidence_json)}</pre>
+          <div style="font-size: 0.8rem; color: #fff; margin-bottom: 0.5rem;">${escapeHtml(ev.title || "Untitled")}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Occurred: ${escapeHtml(ev.occurred_at)}</div>
+          <pre class="json-viewer">${escapeHtml(formatJsonString(ev.evidence_json))}</pre>
         </div>
       `).join("");
     } else {
@@ -204,16 +252,16 @@ async function viewEvidence(alertId) {
     body.innerHTML = `
       <div style="margin-bottom: 1.25rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-          <h3 style="color: #fff; font-size: 1.1rem;">${alert.title}</h3>
-          <span class="badge badge-${alert.severity}">${alert.severity.toUpperCase()}</span>
+          <h3 style="color: #fff; font-size: 1.1rem;">${escapeHtml(alert.title)}</h3>
+          <span class="badge badge-${escapeHtml(alert.severity)}">${escapeHtml(alert.severity.toUpperCase())}</span>
         </div>
-        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">${alert.description || "No description provided."}</p>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">${escapeHtml(alert.description || "No description provided.")}</p>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; font-size: 0.75rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 4px; border: 1px solid var(--border-dim);">
-          <div><span style="color: var(--text-muted);">RULE ID:</span> <span class="cyber-code">${alert.rule_id}</span></div>
-          <div><span style="color: var(--text-muted);">AGENT:</span> <span class="cyber-code">${alert.agent_id}</span></div>
-          <div><span style="color: var(--text-muted);">FIRST SEEN:</span> <span>${alert.first_seen_at}</span></div>
-          <div><span style="color: var(--text-muted);">LAST SEEN:</span> <span>${alert.last_seen_at}</span></div>
-          ${alert.resolution_note ? `<div style="grid-column: 1 / -1;"><span style="color: var(--text-muted);">NOTE:</span> <span style="color: var(--neon-green);">${alert.resolution_note}</span></div>` : ""}
+          <div><span style="color: var(--text-muted);">RULE ID:</span> <span class="cyber-code">${escapeHtml(alert.rule_id)}</span></div>
+          <div><span style="color: var(--text-muted);">AGENT:</span> <span class="cyber-code">${escapeHtml(alert.agent_id)}</span></div>
+          <div><span style="color: var(--text-muted);">FIRST SEEN:</span> <span>${escapeHtml(alert.first_seen_at)}</span></div>
+          <div><span style="color: var(--text-muted);">LAST SEEN:</span> <span>${escapeHtml(alert.last_seen_at)}</span></div>
+          ${alert.resolution_note ? `<div style="grid-column: 1 / -1;"><span style="color: var(--text-muted);">NOTE:</span> <span style="color: var(--neon-green);">${escapeHtml(alert.resolution_note)}</span></div>` : ""}
         </div>
       </div>
       <h4 style="color: var(--neon-cyan); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem;">// LINKED SECURITY EVENTS (${events.length})</h4>

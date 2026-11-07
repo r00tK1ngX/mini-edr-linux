@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
+from agent.file_integrity import FileIntegrityMonitor
 from agent.main import AgentConfig, AgentOrchestrator
 
 
@@ -141,3 +142,51 @@ def test_orchestrator_stop_cleanly():
     orch.running = True
     orch.stop()
     assert orch.running is False
+
+
+def test_orchestrator_fim_event_retention_on_network_failure(tmp_path):
+    """When sending FIM security events fails due to network outage, baseline is not advanced and event is retried."""
+    watch_dir = tmp_path / "fim_network_test"
+    watch_dir.mkdir()
+    target_file = watch_dir / "service.conf"
+    target_file.write_text("setting=original")
+
+    cfg = AgentConfig(agent_id="test-agent", monitored_paths=[str(watch_dir)])
+    fim_monitor = FileIntegrityMonitor(agent_id="test-agent", monitored_paths=[str(watch_dir)])
+    fim_monitor.initialize_baseline()
+    initial_sha = fim_monitor.baseline[str(target_file.resolve())]["sha256"]
+
+    mock_client = MagicMock()
+    mock_sys = MagicMock()
+    mock_sys.collect_system_info.return_value = {"status": "ok"}
+    mock_proc = MagicMock()
+    mock_proc.collect_snapshot.return_value = {"payload": {"process_count": 0}}
+
+    orch = AgentOrchestrator(
+        config=cfg,
+        system_collector=mock_sys,
+        process_collector=mock_proc,
+        fim_monitor=fim_monitor,
+        client=mock_client,
+    )
+    orch.fim_initialized = True  # Baseline already initialized
+
+    # 1. Modify the file
+    target_file.write_text("setting=malicious_compromise")
+
+    # 2. Network error on send_security_event
+    mock_client.send_security_event.side_effect = ConnectionError("Connection refused by upstream")
+
+    summary1 = orch.run_single_cycle(force_all=True)
+    assert any("FIM scan error" in err for err in summary1["errors"])
+    # Crucial assertion: Baseline must NOT have advanced to the new modified hash!
+    assert fim_monitor.baseline[str(target_file.resolve())]["sha256"] == initial_sha
+
+    # 3. Network recovers
+    mock_client.send_security_event.side_effect = None
+
+    summary2 = orch.run_single_cycle(force_all=True)
+    assert summary2["fim_events_sent"] == 1
+    # Now baseline is successfully advanced
+    assert fim_monitor.baseline[str(target_file.resolve())]["sha256"] != initial_sha
+

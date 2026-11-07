@@ -14,7 +14,9 @@ Renders Cyberpunk-themed SOC console views:
 """
 
 from datetime import datetime, timezone
+import hmac
 import json
+import secrets
 from typing import Any, Dict, List, Optional
 
 from flask import (
@@ -25,6 +27,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 
@@ -36,6 +39,79 @@ from server.repositories.metrics_repository import MetricsRepository
 from server.repositories.process_repository import ProcessRepository
 
 web_bp = Blueprint("web", __name__)
+
+
+# -----------------------------------------------------------------------------
+# Security & CSRF Helpers
+# -----------------------------------------------------------------------------
+
+def get_or_create_csrf_token() -> str:
+    """Generate or retrieve per-session anti-CSRF token."""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
+@web_bp.app_context_processor
+def inject_security_context():
+    """Inject CSRF token and operator authentication state into Jinja2 templates."""
+    return {
+        "csrf_token": get_or_create_csrf_token,
+        "is_authenticated": session.get("operator_authenticated", False),
+    }
+
+
+def validate_csrf() -> bool:
+    """Verify CSRF token for state-changing requests."""
+    if current_app.config.get("TESTING") and not current_app.config.get("ENFORCE_CSRF_IN_TESTS", False):
+        return True
+    expected = session.get("csrf_token")
+    if not expected:
+        return False
+
+    received = request.headers.get("X-CSRF-Token")
+    if not received and request.is_json:
+        received = (request.get_json(silent=True) or {}).get("csrf_token")
+    if not received and request.form:
+        received = request.form.get("csrf_token")
+
+    return bool(received and hmac.compare_digest(str(received), str(expected)))
+
+
+@web_bp.before_request
+def require_operator_auth():
+    """Enforce operator authentication for Web SOC views."""
+    # Allow static assets and authentication endpoints
+    if request.endpoint in ("web.login", "web.logout", "static"):
+        return None
+
+    # Allow testing bypass unless explicitly enforcing auth in tests
+    if current_app.config.get("TESTING") and not current_app.config.get("ENFORCE_WEB_AUTH_IN_TESTS", False):
+        return None
+
+    # Check if operator session is authenticated
+    if session.get("operator_authenticated"):
+        return None
+
+    # Allow Bearer token in header or ?token= query parameter for lab convenience
+    auth_header = request.headers.get("Authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif request.args.get("token"):
+        token = request.args.get("token").strip()
+
+    expected_token = current_app.config.get("EDR_API_TOKEN")
+    if token and expected_token and hmac.compare_digest(token, expected_token):
+        session["operator_authenticated"] = True
+        get_or_create_csrf_token()
+        return None
+
+    # Unauthorized request handling
+    if request.is_json or request.path.endswith("/telemetry") or request.path.endswith("/detail"):
+        return jsonify({"success": False, "error": "Unauthorized operator session"}), 401
+
+    return redirect(url_for("web.login", next=request.path))
 
 
 # -----------------------------------------------------------------------------
@@ -88,6 +164,42 @@ def format_uptime_filter(seconds: Optional[float]) -> str:
         return f"{minutes}m {s}s"
     except Exception:
         return f"{seconds}s"
+
+
+# -----------------------------------------------------------------------------
+# Web Authentication Routes
+# -----------------------------------------------------------------------------
+
+@web_bp.route("/login", methods=["GET", "POST"])
+def login():
+    """Operator login for Web SOC Console."""
+    if session.get("operator_authenticated"):
+        return redirect(url_for("web.dashboard"))
+
+    error = None
+    next_url = request.args.get("next") or url_for("web.dashboard")
+
+    if request.method == "POST":
+        token = request.form.get("token", "").strip()
+        expected_token = current_app.config.get("EDR_API_TOKEN")
+
+        if token and expected_token and hmac.compare_digest(token, expected_token):
+            session["operator_authenticated"] = True
+            get_or_create_csrf_token()
+            flash("Operator session authenticated successfully.", "success")
+            return redirect(next_url)
+        else:
+            error = "Invalid API Access Token. Authentication rejected."
+
+    return render_template("login.html", error=error)
+
+
+@web_bp.get("/logout")
+def logout():
+    """Terminate operator session."""
+    session.clear()
+    flash("Operator session terminated.", "info")
+    return redirect(url_for("web.login"))
 
 
 # -----------------------------------------------------------------------------
@@ -291,6 +403,12 @@ def alert_detail_json(alert_id: int):
 @web_bp.post("/alerts/<int:alert_id>/acknowledge")
 def web_acknowledge_alert(alert_id: int):
     """Web action to acknowledge an alert (supports JSON fetch or Form POST)."""
+    if not validate_csrf():
+        if request.is_json:
+            return jsonify({"success": False, "error": "CSRF verification failed"}), 403
+        flash("CSRF verification failed. Action rejected.", "error")
+        return redirect(request.referrer or url_for("web.alerts"))
+
     db_path = current_app.config["DATABASE_PATH"]
     alert_repo = AlertRepository(db_path)
 
@@ -331,6 +449,12 @@ def web_acknowledge_alert(alert_id: int):
 @web_bp.post("/alerts/<int:alert_id>/resolve")
 def web_resolve_alert(alert_id: int):
     """Web action to resolve an alert with notes (supports JSON fetch or Form POST)."""
+    if not validate_csrf():
+        if request.is_json:
+            return jsonify({"success": False, "error": "CSRF verification failed"}), 403
+        flash("CSRF verification failed. Action rejected.", "error")
+        return redirect(request.referrer or url_for("web.alerts"))
+
     db_path = current_app.config["DATABASE_PATH"]
     alert_repo = AlertRepository(db_path)
 
@@ -365,6 +489,12 @@ def web_resolve_alert(alert_id: int):
 @web_bp.post("/alerts/<int:alert_id>/dismiss")
 def web_dismiss_alert(alert_id: int):
     """Web action to dismiss an alert as false positive / ignored."""
+    if not validate_csrf():
+        if request.is_json:
+            return jsonify({"success": False, "error": "CSRF verification failed"}), 403
+        flash("CSRF verification failed. Action rejected.", "error")
+        return redirect(request.referrer or url_for("web.alerts"))
+
     db_path = current_app.config["DATABASE_PATH"]
     alert_repo = AlertRepository(db_path)
 

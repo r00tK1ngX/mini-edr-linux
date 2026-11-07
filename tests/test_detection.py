@@ -18,10 +18,12 @@ from detection.correlation import CorrelatedFinding, CorrelationEngine
 from detection.engine import DetectionEngine
 from detection.rules import (
     DetectionResult,
+    FimDroppedBinaryRule,
     FimSensitiveFileRule,
     ProcessHiddenBinaryRule,
     ProcessHighCpuRule,
     ProcessHighMemoryRule,
+    ProcessShellSpawnRule,
     ProcessSuspiciousPathRule,
     RuleRegistry,
 )
@@ -80,14 +82,16 @@ def auth_headers():
 
 def test_rule_registry_default_loading():
     registry = RuleRegistry()
-    assert len(registry.rules) >= 5
+    assert len(registry.rules) >= 7
 
     rule_ids = [r.rule_id for r in registry.rules]
     assert "rule-process-high-cpu" in rule_ids
     assert "rule-process-high-memory" in rule_ids
     assert "rule-process-suspicious-path" in rule_ids
     assert "rule-process-hidden-binary" in rule_ids
+    assert "rule-proc-shell-spawn" in rule_ids
     assert "rule-fim-sensitive-tampered" in rule_ids
+    assert "rule-fim-dropped-binary" in rule_ids
 
 
 def test_rule_registry_custom_json_config(tmp_path):
@@ -243,6 +247,82 @@ def test_fim_sensitive_file_tampering_rule():
     assert res_shadow_del is not None
     assert res_shadow_del.severity == "critical"
     assert res_shadow_del.risk_score >= 80
+
+
+def test_process_shell_spawn_rule():
+    """Verify ProcessShellSpawnRule detects reverse shells spawned by daemons/web users."""
+    rule = ProcessShellSpawnRule()
+
+    # 1. Normal user shell -> None
+    res_normal = rule.evaluate({
+        "agent_id": "agent-01",
+        "pid": 501,
+        "process_name": "bash",
+        "exe_path": "/bin/bash",
+        "username": "kali",
+        "parent_name": "login",
+    })
+    assert res_normal is None
+
+    # 2. Web server user (www-data) spawning bash -> High alert
+    res_web_shell = rule.evaluate({
+        "agent_id": "agent-01",
+        "pid": 502,
+        "process_name": "sh",
+        "exe_path": "/bin/sh",
+        "username": "www-data",
+        "parent_name": "apache2",
+    })
+    assert res_web_shell is not None
+    assert res_web_shell.rule_id == "rule-proc-shell-spawn"
+    assert res_web_shell.severity == "high"
+    assert res_web_shell.risk_score == 60
+    assert "T1059.004" in res_web_shell.mitre_attack
+
+    # 3. Python parent spawning /bin/bash -> High alert
+    res_py_spawn = rule.evaluate({
+        "agent_id": "agent-01",
+        "pid": 503,
+        "process_name": "bash",
+        "exe_path": "/usr/bin/bash",
+        "username": "nobody",
+        "parent_name": "python3",
+    })
+    assert res_py_spawn is not None
+    assert res_py_spawn.rule_id == "rule-proc-shell-spawn"
+
+
+def test_fim_dropped_binary_rule():
+    """Verify FimDroppedBinaryRule detects files created in suspicious/temp directories."""
+    rule = FimDroppedBinaryRule()
+
+    # 1. Regular file in /home/kali -> None
+    res_home = rule.evaluate({
+        "event_type": "fim_file_created",
+        "evidence": {"file_path": "/home/kali/script.py"},
+    })
+    assert res_home is None
+
+    # 2. File modification in /tmp -> None (only file creation triggers dropped binary)
+    res_mod = rule.evaluate({
+        "event_type": "fim_file_modified",
+        "evidence": {"file_path": "/tmp/existing.log"},
+    })
+    assert res_mod is None
+
+    # 3. New binary created in /tmp -> DetectionResult
+    res_drop = rule.evaluate({
+        "agent_id": "agent-01",
+        "event_type": "fim_file_created",
+        "evidence": {"file_path": "/tmp/dropper.elf"},
+    })
+    assert res_drop is not None
+    assert res_drop.rule_id == "rule-fim-dropped-binary"
+    assert res_drop.severity == "medium"
+    assert res_drop.risk_score == 40
+    assert "T1105" in res_drop.mitre_attack
+    assert res_drop.evidence["file_path"] == "/tmp/dropper.elf"
+
 
 
 # -----------------------------------------------------------------------------
@@ -510,3 +590,96 @@ def test_api_process_ingestion_triggers_detection_and_creates_alert(client, app)
     assert detail_resp.status_code == 200
     detail = detail_resp.get_json()["alert"]
     assert len(detail["events"]) >= 1
+
+
+def test_correlation_min_score_threshold_enforced():
+    """Verify min_correlation_score parameter blocks correlation if combined score is below threshold."""
+    # min_correlation_score set to 90
+    strict_engine = CorrelationEngine(min_correlation_score=90)
+
+    pid = 1111
+    # Score 50 + 30 = 80 (< 90 threshold)
+    path_det = DetectionResult(
+        rule_id="rule-process-suspicious-path",
+        rule_name="Suspicious Path",
+        title="Path",
+        description="Path",
+        severity="high",
+        risk_score=50,
+        evidence={"pid": pid, "process_name": "app", "exe_path": "/tmp/app"},
+    )
+    cpu_det = DetectionResult(
+        rule_id="rule-process-high-cpu",
+        rule_name="High CPU",
+        title="High CPU",
+        description="CPU",
+        severity="medium",
+        risk_score=30,
+        evidence={"pid": pid, "process_name": "app", "exe_path": "/tmp/app", "cpu_percent": 90.0},
+    )
+
+    correlated_strict = strict_engine.correlate_process_and_fim(
+        agent_id="agent-01",
+        process_detections=[path_det, cpu_det],
+        fim_detections=[],
+    )
+    assert len(correlated_strict) == 0  # Blocked by min_correlation_score=90
+
+    # With standard threshold 75:
+    normal_engine = CorrelationEngine(min_correlation_score=75)
+    correlated_normal = normal_engine.correlate_process_and_fim(
+        agent_id="agent-01",
+        process_detections=[path_det, cpu_det],
+        fim_detections=[],
+    )
+    assert len(correlated_normal) == 1  # 80 >= 75: Passes
+
+
+def test_fim_dropped_binary_and_process_exec_correlation_e2e(db_path, sample_endpoint):
+    """E2E Detection Engine: FIM dropped binary event in /tmp followed by process execution triggers Critical alert."""
+    engine = DetectionEngine(database_path=db_path)
+    agent_id = sample_endpoint["agent_id"]
+
+    # 1. Ingest FIM event of newly dropped binary into database
+    fim_event = engine.event_repo.record({
+        "message_id": "msg-fim-drop-001",
+        "schema_version": "1.0",
+        "agent_id": agent_id,
+        "event_type": "fim_file_created",
+        "severity": "medium",
+        "source": "agent",
+        "title": "New file in /tmp",
+        "description": "File created in /tmp/backdoor.elf",
+        "evidence_json": {"file_path": "/tmp/backdoor.elf"},
+        "occurred_at": "2026-11-05T08:00:00Z",
+        "received_at": "2026-11-05T08:00:01Z",
+        "fingerprint": "fim:dropped:test",
+    })
+
+    # Evaluate FIM event directly -> FimDroppedBinaryRule triggers alert
+    fim_eval = engine.evaluate_security_event(agent_id, fim_event)
+    assert fim_eval["matches_count"] == 1
+    assert fim_eval["alerts_created"] == 1
+    assert fim_eval["alerts"][0]["rule_id"] == "rule-fim-dropped-binary"
+
+    # 2. Process snapshot arrives executing /tmp/backdoor.elf with high CPU
+    observations = [
+        {
+            "pid": 6666,
+            "ppid": 1,
+            "process_name": "backdoor.elf",
+            "exe_path": "/tmp/backdoor.elf",
+            "cpu_percent": 90.0,
+            "memory_percent": 10.0,
+        }
+    ]
+
+    proc_eval = engine.evaluate_process_snapshot(agent_id, snapshot_id=2, observations=observations)
+    assert proc_eval["alerts_created"] >= 1
+
+    # Correlated alert generated combining dropped binary + execution + CPU
+    correlated_alert = next((a for a in proc_eval["alerts"] if a["rule_id"] == "rule-correlated-multistage"), None)
+    assert correlated_alert is not None
+    assert correlated_alert["severity"] == "critical"
+    assert "backdoor.elf" in correlated_alert["title"]
+

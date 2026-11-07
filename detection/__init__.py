@@ -8,10 +8,12 @@ from detection.engine import DetectionEngine
 from detection.rules import (
     BaseRule,
     DetectionResult,
+    FimDroppedBinaryRule,
     FimSensitiveFileRule,
     ProcessHiddenBinaryRule,
     ProcessHighCpuRule,
     ProcessHighMemoryRule,
+    ProcessShellSpawnRule,
     ProcessSuspiciousPathRule,
     RuleRegistry,
 )
@@ -22,10 +24,12 @@ __all__ = [
     "CorrelationEngine",
     "DetectionEngine",
     "DetectionResult",
+    "FimDroppedBinaryRule",
     "FimSensitiveFileRule",
     "ProcessHiddenBinaryRule",
     "ProcessHighCpuRule",
     "ProcessHighMemoryRule",
+    "ProcessShellSpawnRule",
     "ProcessSuspiciousPathRule",
     "RuleRegistry",
 ]

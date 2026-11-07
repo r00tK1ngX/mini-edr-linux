@@ -21,6 +21,7 @@ Tests:
 
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 import uuid
 import pytest
 
@@ -319,3 +320,169 @@ def test_idempotency_duplicate_message_id(client):
     res_conflict = client.post("/api/v1/telemetry/processes", json=payload_conflict, headers=auth_headers())
     assert res_conflict.status_code == 409
     assert "Conflict" in res_conflict.get_json()["error"]
+
+
+# =============================================================================
+# 6. Stage B: Security Remediation Regression Probes
+# =============================================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_attribute_injection_xss_mitigated(client, app):
+    """Alert title with single quotes is bound via HTML5 data attribute without inline JS breakout."""
+    db_path = app.config["DATABASE_PATH"]
+    endpoint_repo = EndpointRepository(db_path)
+    now = _utc_now()
+    endpoint_repo.upsert({"agent_id": "probe-agent", "hostname": "probe-box", "os": "Linux", "last_seen": now})
+
+    alert_repo = AlertRepository(db_path)
+    malicious_title = "Backdoor'); alert('ATTR_XSS');//"
+    alert = alert_repo.create_or_update({
+        "alert_key": "alert:probe-attr-xss",
+        "agent_id": "probe-agent",
+        "rule_id": "probe-rule",
+        "title": malicious_title,
+        "description": "Probe Description",
+        "severity": "high",
+        "status": "new",
+        "first_seen_at": now,
+        "last_seen_at": now,
+    })
+
+    alerts_page = client.get("/alerts").get_data(as_text=True)
+    # Must NOT contain vulnerable inline onclick concatenation
+    assert "onclick=\"promptResolveAlert(" not in alerts_page
+    # Must contain safe data-alert-title attribute
+    assert 'class="btn btn-green btn-sm btn-prompt-resolve"' in alerts_page
+    assert f'data-alert-id="{alert["id"]}"' in alerts_page
+
+
+def test_dom_xss_view_evidence_mitigation():
+    """Verify static/dashboard.js uses escapeHtml for all untrusted telemetry fields in viewEvidence."""
+    with open(PROJECT_ROOT / "static" / "dashboard.js", "r", encoding="utf-8") as f:
+        js_code = f.read()
+
+    assert "escapeHtml(alert.title)" in js_code
+    assert "escapeHtml(alert.description" in js_code
+    assert "escapeHtml(ev.title" in js_code
+    assert "escapeHtml(ev.event_type)" in js_code
+    assert "escapeHtml(formatJsonString(ev.evidence_json))" in js_code
+
+
+def test_secret_key_form_post_resilience(client, app):
+    """Form POST actions with session flashes succeed without missing secret key error."""
+    db_path = app.config["DATABASE_PATH"]
+    endpoint_repo = EndpointRepository(db_path)
+    now = _utc_now()
+    endpoint_repo.upsert({"agent_id": "probe-agent", "hostname": "probe-box", "os": "Linux", "last_seen": now})
+
+    alert_repo = AlertRepository(db_path)
+    alert = alert_repo.create_or_update({
+        "alert_key": "alert:probe-form-post",
+        "agent_id": "probe-agent",
+        "rule_id": "probe-rule",
+        "title": "Probe Alert for Form POST",
+        "severity": "medium",
+        "status": "new",
+        "first_seen_at": now,
+        "last_seen_at": now,
+    })
+
+    # Submitting form-encoded POST must NOT raise RuntimeError
+    resp = client.post(
+        f"/alerts/{alert['id']}/acknowledge",
+        data={"note": "Form post note"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    updated = alert_repo.get_by_id(alert["id"])
+    assert updated["status"] == "acknowledged"
+
+
+def test_web_console_session_authentication(tmp_path):
+    """Web SOC views enforce login when ENFORCE_WEB_AUTH_IN_TESTS is enabled."""
+    db_path = tmp_path / "web_auth_test.db"
+    application = create_app({
+        "TESTING": True,
+        "EDR_API_TOKEN": "valid-secret-token-123456789012345678",
+        "DATABASE_PATH": str(db_path),
+        "ENFORCE_WEB_AUTH_IN_TESTS": True,
+    })
+    test_client = application.test_client()
+
+    # 1. Unauthenticated request redirects to /login
+    res_unauth = test_client.get("/dashboard")
+    assert res_unauth.status_code == 302
+    assert "/login" in res_unauth.headers["Location"]
+
+    # 2. Login page renders cleanly
+    res_login_page = test_client.get("/login")
+    assert res_login_page.status_code == 200
+    assert "AUTHENTICATE SESSION" in res_login_page.get_data(as_text=True)
+
+    # 3. Invalid token fails
+    res_bad_login = test_client.post("/login", data={"token": "wrong-token"})
+    assert res_bad_login.status_code == 200
+    assert "Authentication rejected" in res_bad_login.get_data(as_text=True)
+
+    # 4. Valid token succeeds and sets session
+    res_good_login = test_client.post(
+        "/login",
+        data={"token": "valid-secret-token-123456789012345678"},
+        follow_redirects=True,
+    )
+    assert res_good_login.status_code == 200
+    assert "SOC COMMAND CENTER" in res_good_login.get_data(as_text=True)
+
+    # 5. Logout terminates session
+    res_logout = test_client.get("/logout", follow_redirects=True)
+    assert res_logout.status_code == 200
+    assert "terminated" in res_logout.get_data(as_text=True)
+
+
+def test_csrf_protection_on_alert_mutations(tmp_path):
+    """State-changing alert mutations reject requests when CSRF token is invalid or missing."""
+    db_path = tmp_path / "csrf_test.db"
+    application = create_app({
+        "TESTING": True,
+        "EDR_API_TOKEN": "valid-secret-token-123456789012345678",
+        "DATABASE_PATH": str(db_path),
+        "ENFORCE_CSRF_IN_TESTS": True,
+    })
+    test_client = application.test_client()
+
+    alert_repo = AlertRepository(str(db_path))
+    endpoint_repo = EndpointRepository(str(db_path))
+    now = _utc_now()
+    endpoint_repo.upsert({"agent_id": "probe-agent", "hostname": "probe-box", "os": "Linux", "last_seen": now})
+    alert = alert_repo.create_or_update({
+        "alert_key": "alert:probe-csrf",
+        "agent_id": "probe-agent",
+        "rule_id": "probe-rule",
+        "title": "Probe Alert for CSRF",
+        "severity": "medium",
+        "status": "new",
+        "first_seen_at": now,
+        "last_seen_at": now,
+    })
+
+    # 1. Missing CSRF token is rejected with HTTP 403
+    res_no_csrf = test_client.post(f"/alerts/{alert['id']}/resolve", json={"resolution_note": "Hacked"})
+    assert res_no_csrf.status_code == 403
+    assert "CSRF verification failed" in res_no_csrf.get_json()["error"]
+
+    # 2. Authenticate session to establish valid csrf_token
+    with test_client.session_transaction() as sess:
+        sess["operator_authenticated"] = True
+        sess["csrf_token"] = "valid-csrf-token-12345"
+
+    # 3. Valid CSRF token in header succeeds
+    res_valid_csrf = test_client.post(
+        f"/alerts/{alert['id']}/resolve",
+        headers={"X-CSRF-Token": "valid-csrf-token-12345"},
+        json={"resolution_note": "Resolved with CSRF"},
+    )
+    assert res_valid_csrf.status_code == 200
+    assert res_valid_csrf.get_json()["status"] == "resolved"
+

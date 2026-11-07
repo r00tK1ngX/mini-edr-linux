@@ -248,3 +248,52 @@ def test_file_integrity_monitor_class(tmp_path):
     # Get sync payload
     sync_payload = monitor.get_baseline_sync_payload()
     assert len(sync_payload["payload"]["files"]) == 1
+
+
+def test_fim_symlink_traversal_protection(tmp_path):
+    """FIM rejects symlinks to prevent directory traversal and TOCTOU attacks."""
+    watch_dir = tmp_path / "monitored"
+    watch_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+
+    real_file = watch_dir / "valid.txt"
+    real_file.write_text("valid file")
+
+    secret_file = outside_dir / "secret_shadow"
+    secret_file.write_text("root:x:0:0...")
+
+    # Symlink inside monitored dir pointing to outside file
+    symlink_file = watch_dir / "link_to_secret"
+    try:
+        symlink_file.symlink_to(secret_file)
+    except OSError:
+        pytest.skip("Symlink creation not supported in this environment")
+
+    # 1. inspect_file directly rejects symlink
+    assert inspect_file(str(symlink_file)) is None
+
+    # 2. scan_monitored_paths excludes symlink
+    scan = scan_monitored_paths([str(watch_dir)])
+    assert str(real_file.resolve()) in scan
+    assert str(symlink_file.resolve()) not in scan
+    assert str(secret_file.resolve()) not in scan
+
+
+def test_fim_quick_check_caching(tmp_path):
+    """FIM reuses sha256 when file mtime, size, and mode are unchanged."""
+    watch_dir = tmp_path / "cached_watch"
+    watch_dir.mkdir()
+    target = watch_dir / "data.bin"
+    target.write_bytes(b"A" * 500)
+
+    # Initial inspect
+    rec1 = inspect_file(str(target))
+    assert rec1 is not None
+
+    # Second inspect passing previous_record
+    rec2 = inspect_file(str(target), previous_record=rec1)
+    assert rec2 is not None
+    assert rec2["sha256"] == rec1["sha256"]
+    assert rec2["first_seen_at"] == rec1["first_seen_at"]
+

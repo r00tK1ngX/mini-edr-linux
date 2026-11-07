@@ -41,15 +41,15 @@ class EndpointRepository(BaseRepository):
                 :last_seen
             )
             ON CONFLICT(agent_id) DO UPDATE SET
-                hostname = excluded.hostname,
-                ip_address = excluded.ip_address,
-                os = excluded.os,
-                agent_version = excluded.agent_version,
+                hostname = COALESCE(excluded.hostname, endpoints.hostname),
+                ip_address = COALESCE(excluded.ip_address, endpoints.ip_address),
+                os = COALESCE(excluded.os, endpoints.os),
+                agent_version = COALESCE(excluded.agent_version, endpoints.agent_version),
                 status = 'online',
-                cpu_percent = excluded.cpu_percent,
-                memory_percent = excluded.memory_percent,
-                disk_percent = excluded.disk_percent,
-                uptime_seconds = excluded.uptime_seconds,
+                cpu_percent = COALESCE(excluded.cpu_percent, endpoints.cpu_percent),
+                memory_percent = COALESCE(excluded.memory_percent, endpoints.memory_percent),
+                disk_percent = COALESCE(excluded.disk_percent, endpoints.disk_percent),
+                uptime_seconds = COALESCE(excluded.uptime_seconds, endpoints.uptime_seconds),
                 last_seen = excluded.last_seen
             RETURNING *;
         """

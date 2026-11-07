@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/flask-3.x-green.svg)](https://flask.palletsprojects.com/)
 [![SQLite](https://img.shields.io/badge/sqlite-WAL%20mode-lightgrey.svg)](https://www.sqlite.org/)
-[![Tests](https://img.shields.io/badge/tests-214%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-230%20passed-brightgreen.svg)](tests/)
 [![Dashboard](https://img.shields.io/badge/ui-cyberpunk%20hacker-00f0ff.svg)](templates/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -41,8 +41,8 @@ Mini EDR combines an independent host-level monitoring Agent, a secure centraliz
 - 🛡️ **Giám sát Toàn vẹn Tệp tin (FIM - File Integrity Monitoring):** Theo dõi đệ quy các thư mục hệ thống nhạy cảm (`/etc`, `/bin`, `/sbin`) sử dụng mã băm mật mã học **SHA-256** để phát hiện tức thời hành vi thêm, sửa, xóa tệp.
 - ⚡ **Động cơ Phát hiện Tương quan (Real-time Detection & Correlation Engine):** Khớp các quy tắc phát hiện mối nguy (Reverse shell, Netcat, Hack tools, Leo thang đặc quyền, Can thiệp `/etc/shadow`), tính điểm rủi ro $0 - 100$ và khử trùng cảnh báo bằng `alert_key`.
 - 🚨 **Quản lý Sự cố Toàn diện (Incident Triage & Response):** Cung cấp luồng xử lý sự cố an ninh chuẩn SOC (`NEW` ➔ `ACKNOWLEDGED` ➔ `RESOLVED`), lưu vết thời gian và ghi chú giải quyết (`resolution_note`).
-- 🌐 **Cyberpunk Hacker Web Dashboard:** Bảng điều khiển SOC Command Center với giao diện Dark Terminal, dải màu Neon, quét lưới Matrix CRT, đồ thị và modals trực quan hóa dữ liệu 100% độc lập không cần Internet (Air-gapped ready).
-- 🔒 **Gia cố An toàn Doanh nghiệp (Enterprise Hardening):** Xác thực Bearer Token, 100% Parameterized SQL ngăn SQLi, chống XSS trong Jinja2 & DOM, chống gửi lặp bằng UUIDv4, giới hạn payload 64KB ngăn DoS.
+- 🌐 **Cyberpunk Hacker Web Dashboard:** Bảng điều khiển SOC Command Center với giao diện Dark Terminal, dải màu Neon, quét lưới Matrix CRT, xác thực phiên người dùng (`/login`), chống CSRF và XSS, đồ thị và modals trực quan hóa dữ liệu 100% độc lập không cần Internet (Air-gapped ready).
+- 🔒 **Gia cố An toàn & Toàn vẹn Dữ liệu:** Xác thực Bearer Token ($\ge 32$ ký tự), bảo vệ CSRF (`X-CSRF-Token`), 100% Parameterized SQL ngăn SQLi, chống DOM XSS qua `escapeHtml()`, chống gửi lặp bằng UUIDv4, giới hạn payload 16 MiB (`EDR_MAX_CONTENT_LENGTH`), cam kết FIM hai pha (Two-phase commit) và ngăn hạ cấp mức độ nghiêm trọng của Alert.
 
 ---
 
@@ -97,23 +97,27 @@ Xem sơ đồ chi tiết và các sequence diagrams tại [docs/ARCHITECTURE.md]
 ```text
 mini-edr-linux/
 ├── agent/                       # Phân hệ Linux Agent thu thập dữ liệu
+│   ├── __main__.py              # Entrypoint thực thi `python -m agent`
 │   ├── client.py                # HTTP client gửi bản tin chuẩn Envelope 1.0
-│   ├── file_integrity.py        # Giám sát toàn vẹn tệp (FIM) bằng SHA-256
+│   ├── file_integrity.py        # Giám sát toàn vẹn tệp (FIM) bằng SHA-256 (Two-phase commit)
+│   ├── main.py                  # Agent Orchestrator loop & vòng lặp quét
 │   ├── orchestrator.py          # Bộ điều phối vòng lặp thu thập định kỳ
-│   ├── process_collector.py     # Quét danh sách tiến trình qua /proc
+│   ├── process_collector.py     # Quét 9 thuộc tính tiến trình qua /proc
 │   └── system_collector.py      # Thu thập thông số phần cứng CPU/RAM/Disk
+├── detection/                   # Phân hệ Động cơ Phát hiện & Quy tắc An ninh
+│   ├── correlation.py           # Động cơ phân tích tương quan & ngưỡng min_correlation_score
+│   ├── engine.py                # Pipeline phát hiện & tính điểm rủi ro Risk Score
+│   └── rules.py                 # Danh mục 7 quy tắc an ninh ánh xạ MITRE ATT&CK
 ├── server/                      # Phân hệ Flask API Server & Web Backend
 │   ├── app.py                   # Flask Application Factory & Server entry point
+│   ├── db.py                    # Khởi tạo kết nối SQLite, WAL mode & busy timeout
 │   ├── routes.py                # Ingestion API Routes (/heartbeat, /telemetry/*, /alerts)
-│   ├── web.py                   # Web Dashboard Blueprint & Controllers
-│   ├── detection/               # Phân hệ Detection Engine
-│   │   ├── engine.py            # Động cơ phân tích tương quan & tính điểm rủi ro
-│   │   └── rules.py             # Định nghĩa danh mục quy tắc phát hiện
+│   ├── web.py                   # Web Dashboard Blueprint, Session Auth & CSRF Guard
 │   ├── migrations/              # Bộ quản lý Schema Migration tự động
 │   │   ├── runner.py            # Migration runner kiểm tra Checksum SHA-256
 │   │   └── sql/                 # Các script tạo cấu trúc bảng SQLite
 │   └── repositories/            # Tầng Data Access Layer (DAL) cách ly SQL
-│       ├── alert_repository.py
+│       ├── alert_repository.py  # Quản lý sự cố, Non-downgrade severity & Reopening
 │       ├── base.py
 │       ├── baseline_repository.py
 │       ├── endpoint_repository.py
@@ -122,33 +126,35 @@ mini-edr-linux/
 │       └── system_metrics_repository.py
 ├── static/                      # Tài nguyên giao diện tĩnh (Cyberpunk CSS & JS)
 │   ├── style.css                # Bộ stylesheet Cyberpunk Theme hoàn chỉnh
-│   └── dashboard.js             # Logic đồng hồ số, AJAX Modals & Toast notifications
+│   └── dashboard.js             # Logic đồng hồ số, CSRF, DOM XSS Sanitizer & Modals
 ├── templates/                   # Giao diện Jinja2 HTML Templates
 │   ├── base.html                # HUD Topbar, navigation & Modal container
+│   ├── login.html               # Trang xác thực Operator Console Cyberpunk
 │   ├── dashboard.html           # Trang 1: SOC Command Center Overview
 │   ├── endpoints.html           # Trang 2: Endpoint Fleet & Inspection Modal
 │   ├── alerts.html              # Trang 3: Incident Response & Triage Console
 │   └── events.html              # Trang 4: Security Audit Logs & FIM Stream
 ├── scripts/                     # Scripts hỗ trợ và tiện ích
-│   └── seed_demo_data.py        # Sinh dữ liệu mẫu chân thực phục vụ demo
-├── tests/                       # Toàn bộ 214 ca kiểm thử tự động
+│   ├── seed_demo_data.py        # Sinh dữ liệu mẫu chân thực phục vụ demo
+│   └── simulate_attack_scenario.py # Mô phỏng tấn công E2E 5 bước trực tiếp
+├── tests/                       # Toàn bộ 230 ca kiểm thử tự động (100% Pass)
 │   ├── test_agent_client.py
 │   ├── test_agent_orchestrator.py
 │   ├── test_alert_management.py
 │   ├── test_api.py
-│   ├── test_dashboard.py
-│   ├── test_database.py
+│   ├── test_correlation.py
 │   ├── test_detection.py
 │   ├── test_file_integrity.py
-│   ├── test_full_system_e2e.py  # Kiểm thử vòng đời hệ thống E2E 8 bước
-│   ├── test_security_reliability.py # 20 bài test bảo mật (SQLi, XSS, Replay)
+│   ├── test_full_system_e2e.py  # Kiểm thử vòng đời hệ thống E2E
+│   ├── test_security_reliability.py # 25 bài test bảo mật (SQLi, DOM XSS, CSRF, Token)
 │   └── ...
 ├── docs/                        # Tài liệu đặc tả kỹ thuật chi tiết
 │   ├── ARCHITECTURE.md          # Đặc tả kiến trúc, sơ đồ ERD & sequence
-│   ├── DATA_CONTRACT.md         # Hợp đồng dữ liệu Envelope & Payloads
+│   ├── DATA_CONTRACT.md         # Hợp đồng dữ liệu Envelope & 9 thuộc tính tiến trình
 │   ├── API_SPECIFICATION.md     # Đặc tả API endpoints & Web routes
-│   └── TEST_PLAN.md             # Kế hoạch và ma trận 214 ca kiểm thử
-├── Lo_trinh_trien_khai_Mini_EDR_Linux.md # Lộ trình triển khai chi tiết
+│   ├── TEST_PLAN.md             # Kế hoạch và ma trận 230 ca kiểm thử
+│   ├── DEMO_SCENARIO.md         # Kịch bản diễn tập thuyết trình demo 5-7 phút
+│   └── PRESENTATION_SLIDES_OUTLINE.md # Đề cương 13 slide bảo vệ đồ án trước Hội đồng
 ├── requirements.txt             # Danh sách thư viện Python
 └── README.md                    # Hướng dẫn tổng quan dự án
 ```
@@ -229,19 +235,38 @@ Script sẽ nạp:
 Mở một terminal mới (trong môi trường ảo):
 
 ```bash
-python3 -m agent.orchestrator
+# Khởi chạy qua entrypoint module:
+python3 -m agent
+# hoặc:
+python3 -m agent.main
 ```
 
 Agent sẽ lập tức:
 1. Thu thập thông tin máy và gửi Heartbeat lên Server.
-2. Quét toàn bộ bảng tiến trình `/proc` và gửi Process Snapshot.
-3. Thiết lập baseline FIM ban đầu và theo dõi thay đổi tệp tin.
+2. Quét bảng tiến trình `/proc` (9 thuộc tính cốt lõi) và gửi Process Snapshot.
+3. Thiết lập baseline FIM ban đầu và theo dõi thay đổi tệp tin với cơ chế Two-phase commit.
+
+### 5.6. Chạy kịch bản tấn công mô phỏng trực tiếp (Attack Simulator)
+
+Hệ thống tích hợp tiện ích mô phỏng tấn công thời gian thực 5 bước phục vụ trình diễn và bảo vệ đồ án:
+
+```bash
+# Chế độ trình diễn tương tác từng bước (ấn ENTER để kích hoạt từng bước tấn công):
+python3 scripts/simulate_attack_scenario.py
+
+# Hoặc chế độ tự động hóa:
+python3 scripts/simulate_attack_scenario.py --auto
+```
+
+Kịch bản thực hiện: Đăng ký Endpoint Heartbeat ➔ Tạo FIM Baseline ➔ Tấn công sửa đổi tệp `/tmp/mini_edr_demo/secure_config.conf` ➔ Thực thi tiện ích `/tmp/nc -lvnp 4444` ➔ Hiển thị báo cáo thống kê Alert trên Web Console.
 
 ---
 
 ## 6. Giao diện Cyberpunk Web Dashboard
 
 Mở trình duyệt truy cập: **`http://127.0.0.1:5000/dashboard`**
+
+Khi chưa đăng nhập, hệ thống tự động chuyển hướng đến màn hình xác thực Operator Console (`/login`). Nhập API Token đã cấu hình để tạo phiên làm việc an toàn.
 
 Hệ thống cung cấp 4 phân hệ màn hình chuyên biệt:
 
@@ -254,8 +279,8 @@ Hệ thống cung cấp 4 phân hệ màn hình chuyên biệt:
    - Bảng quản lý máy trạm kèm bộ lọc trạng thái nhanh (`ALL`, `ONLINE`, `OFFLINE`) và ô tìm kiếm tức thời theo hostname/IP.
    - Nút **INSPECT**: Mở Cyber Modal nạp danh sách tiến trình đang chạy và số tệp FIM được giám sát qua AJAX.
 3. **Incident Response & Triage Console (`/alerts`):**
-   - Bảng điều khiển phân loại và xử lý sự cố an ninh.
-   - Nút **EVIDENCE**: Mở Modal xem chi tiết JSON evidence và các security events liên quan.
+   - Bảng điều khiển phân loại và xử lý sự cố an ninh được bảo vệ bằng CSRF Token.
+   - Nút **EVIDENCE**: Mở Modal xem chi tiết JSON evidence và các security events liên quan (chống DOM XSS).
    - Thao tác trực tiếp không cần reload trang:
      - `ACK`: Tiếp nhận xử lý sự cố.
      - `RESOLVE`: Mở modal nhập kết luận khắc phục và đóng cảnh báo.
@@ -267,27 +292,31 @@ Hệ thống cung cấp 4 phân hệ màn hình chuyên biệt:
 
 ## 7. Động cơ Phát hiện & Quy tắc An ninh (Detection Engine)
 
-Detection Engine tích hợp sẵn các quy tắc phát hiện rõ ràng (explainable):
+Detection Engine tích hợp sẵn 7 quy tắc phát hiện rõ ràng (explainable), ánh xạ đầy đủ theo khung ma trận tấn công **MITRE ATT&CK**:
 
-| Mã Quy tắc | Tên Quy tắc | Hành vi Giám sát | Mức độ |
-|---|---|---|---|
-| `RULE_SUSPICIOUS_PROCESS` | Reverse Shell / Hack Tools | Phát hiện binary độc hại (`nc`, `netcat`, `nmap`, `mimikatz`, `socat`) hoặc chạy từ `/tmp`, `/dev/shm` | `CRITICAL` |
-| `RULE_SHELL_SPAWN` | Interactive Shell Spawning | Phát hiện shell (`bash`, `sh`, `zsh`) được sinh ra từ Web Server hoặc Scripting runtime | `HIGH` |
-| `RULE_HIGH_CPU_PROCESS` | Anomalous CPU Usage | Phát hiện tiến trình chiếm dụng $> 85\%$ CPU kéo dài (dấu hiệu đào tiền ảo / DoS) | `MEDIUM` |
-| `RULE_FIM_SENSITIVE_FILE` | Sensitive File Tampering | Phát hiện can thiệp tệp cấu hình bảo mật (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`) | `HIGH` |
+| Mã Quy tắc | Tên Quy tắc | Hành vi Giám sát | Mức độ | MITRE ATT&CK |
+|---|---|---|---|---|
+| `rule-proc-suspicious-path` | `RULE_SUSPICIOUS_PROCESS` | Phát hiện binary độc hại (`nc`, `netcat`, `nmap`, `mimikatz`, `socat`) hoặc chạy từ thư mục bất thường (`/tmp`, `/dev/shm`, `/var/tmp`) | `CRITICAL` | T1059.004 |
+| `rule-proc-shell-spawn` | `RULE_SHELL_SPAWN` | Phát hiện shell (`bash`, `sh`, `zsh`) được sinh ra dưới ngữ cảnh daemon/web service (`www-data`, `apache2`, `nginx`) | `HIGH` | T1059.004 |
+| `rule-proc-high-cpu` | `RULE_HIGH_CPU_PROCESS` | Phát hiện tiến trình chiếm dụng $\ge 85.0\%$ CPU kéo dài (dấu hiệu đào tiền ảo / DoS) | `MEDIUM` | T1496 |
+| `rule-fim-sensitive-file` | `RULE_FIM_SENSITIVE_FILE` | Phát hiện can thiệp tệp cấu hình bảo mật cốt lõi (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`) | `HIGH` | T1003.008 |
+| `rule-fim-dropped-binary` | `RULE_FIM_DROPPED_BINARY` | Phát hiện tệp thực thi ELF hoặc script mới được thả vào các thư mục tạm (`/tmp`, `/var/tmp`, `/dev/shm`) | `HIGH` | T1105 |
+| `rule-fim-critical-deleted` | `RULE_FIM_CRITICAL_DELETED` | Phát hiện xóa tệp hệ thống hoặc tệp cấu hình an ninh trọng yếu | `HIGH` | T1070.004 |
+| `rule-fim-service-tamper` | `RULE_FIM_SERVICE_TAMPER` | Phát hiện can thiệp hoặc thay đổi trái phép unit service (`systemd`) | `MEDIUM` | T1543.002 |
 
 **Cơ chế Tính điểm Rủi ro (Correlation & Risk Scoring):**
-Kết hợp đồng thời nhiều chỉ số vi phạm trên cùng endpoint để nâng mức độ cảnh báo (Ví dụ: Binary trong `/tmp` kết hợp sửa đổi `/etc/shadow` sẽ nâng điểm rủi ro lên $\ge 90$ - mức `CRITICAL`).
+- Động cơ phân tích tương quan (`detection/correlation.py`) phân tích đa sự kiện trong khung thời gian trượt (Sliding Time Window = 300s).
+- Khi có ít nhất 2 yếu tố vi phạm và tổng điểm rủi ro đạt ngưỡng `min_correlation_score >= 60.0`, hệ thống sinh một cảnh báo tổng hợp (Correlated Alert) với mức độ nghiêm trọng tương xứng và bảng Evidence gom tụ đầy đủ.
 
 ---
 
 ## 8. Vòng đời Xử lý Sự cố (Incident Lifecycle)
 
-Vòng đời cảnh báo tuân thủ nghiêm ngặt máy trạng thái hữu hạn:
+Vòng đời cảnh báo tuân thủ nghiêm ngặt máy trạng thái hữu hạn với cơ chế bảo toàn mức độ nghiêm trọng (Non-downgrade severity):
 
 ```text
        ┌───────────┐
-       │    NEW    │◄─── Sinh ra từ Detection Engine
+       │    NEW    │◄─── Sinh ra từ Detection Engine (hoặc mở lại khi có vi phạm mới)
        └─────┬─────┘
              │
       ┌──────┴──────┐
@@ -301,26 +330,28 @@ Vòng đời cảnh báo tuân thủ nghiêm ngặt máy trạng thái hữu h�
       Resolve (Fix Applied)
 ```
 
-- **State Transition Guard:** Nghiêm cấm chuyển lùi từ `resolved` về `acknowledged` (Trả về HTTP 400/409).
-- **Idempotency:** Bấm nhiều lần hành động không gây sai lệch dữ liệu lịch sử hoặc ghi đè timestamp ban đầu.
+- **Non-downgrade Severity:** Khi sự kiện tái diễn trên cùng alert key, mức độ nghiêm trọng chỉ được leo thang hoặc giữ nguyên theo thứ bậc: `info < low < medium < high < critical`.
+- **Alert Reopening:** Nếu sự kiện vi phạm tiếp tục xuất hiện sau khi cảnh báo đã được đánh dấu `resolved`, trạng thái sẽ tự động được mở lại về `new` và xóa ghi chú giải quyết cũ.
+- **Idempotency:** Các thao tác thừa nhận (`acknowledge`), giải quyết (`resolve`), bỏ qua (`dismiss`) đảm bảo tính lũy thừa, không ghi đè timestamp ban đầu.
 
 ---
 
 ## 9. Bảo mật & Gia cố Hệ thống (Security Hardening)
 
-- **Authentication:** Mọi API `/api/v1/*` bắt buộc có Bearer Token.
-- **Token Redaction:** Token được ẩn giấu tự động trong toàn bộ hệ thống log nhằm tránh rò rỉ credential.
-- **SQL Injection Defense:** 100% câu truy vấn sử dụng parameterized SQL trong tầng DAL. Đã vượt qua bộ probe SQL Injection nâng cao.
-- **XSS Defense:** Toàn bộ dữ liệu hiển thị trên Web Console đều được escape HTML an toàn ở cả Frontend JS và Backend Jinja2.
-- **Replay Attack Resistance:** Mỗi bản tin telemetry mang một UUIDv4 `message_id` duy nhất; chặn đứng hành vi gửi lặp dữ liệu độc hại.
-- **DoS Prevention:** Cấu hình `MAX_CONTENT_LENGTH = 64KB` chặn payload quá tải bộ nhớ.
-- **Database Resilience:** SQLite chạy chế độ WAL mode, `PRAGMA foreign_keys = ON`, `busy_timeout = 5000ms`.
+- **Authentication:** Mọi API `/api/v1/*` bắt buộc có Bearer Token ($\ge 32$ ký tự). Khi chạy môi trường production, Application Factory chặn khởi động nếu token yếu hoặc trùng chuỗi placeholder.
+- **Web Console Session & CSRF:** Giao diện điều hành yêu cầu xác thực phiên (`/login`). Mọi thao tác thay đổi trạng thái Alert (`ACK`, `RESOLVE`, `DISMISS`) đều yêu cầu `X-CSRF-Token` bảo vệ chống tấn công CSRF.
+- **Token Redaction:** Token được so khớp an toàn qua `hmac.compare_digest()` và ẩn giấu tự động trong toàn bộ hệ thống log nhằm tránh rò rỉ credential.
+- **SQL Injection Defense:** 100% câu truy vấn sử dụng parameterized SQL trong tầng DAL Repositories. Đã vượt qua bộ probe SQL Injection nâng cao.
+- **DOM XSS Defense:** Toàn bộ dữ liệu hiển thị trên Web Console đều được lọc qua hàm `escapeHtml()` ở Frontend và cơ chế autoescape của Jinja2. Các inline event attributes (`onclick`) được thay thế hoàn toàn bằng event delegation an toàn.
+- **FIM Data Integrity & TOCTOU Protection:** Thuật toán FIM sử dụng `os.lstat()` và kiểm tra `stat.S_ISLNK()` ngăn chặn triệt để tấn công vượt quyền qua liên kết tượng trưng (Symlink Traversal), đồng thời áp dụng Two-phase commit (chỉ cập nhật baseline sau khi sự kiện gửi thành công) để chống mất mát dữ liệu khi đứt mạng.
+- **Payload Bound:** Cấu hình `EDR_MAX_CONTENT_LENGTH = 16 MiB` mặc định cho phép tiếp nhận an toàn các snapshot tiến trình lớn mà không bị ngắt quãng.
+- **Database Resilience:** SQLite chạy chế độ WAL mode, `PRAGMA foreign_keys = ON`, `busy_timeout = 10000ms`.
 
 ---
 
 ## 10. Kiểm thử Hệ thống (Testing & Verification)
 
-Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **214 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc:
+Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **230 ca kiểm thử** bao phủ toàn bộ các tầng kiến trúc:
 
 ```bash
 # Kích hoạt môi trường và chạy toàn bộ kiểm thử
@@ -329,24 +360,24 @@ Dự án sở hữu bộ kiểm thử tự động toàn diện gồm **214 ca k
 
 Kết quả thực nghiệm:
 ```text
-============================= 214 passed in 12.54s =============================
+============================= 230 passed in 17.92s =============================
 ```
 
 Chạy riêng từng bộ kiểm thử chuyên biệt:
 ```bash
-# Kiểm thử Unit Agent
-.venv/bin/pytest tests/test_system_collector.py tests/test_process_collector.py tests/test_file_integrity.py
+# Kiểm thử Unit Agent (System, Process, FIM)
+.venv/bin/pytest tests/test_system_collector.py tests/test_file_integrity.py tests/test_agent_orchestrator.py
 
-# Kiểm thử Detection & Alert
-.venv/bin/pytest tests/test_detection.py tests/test_alert_management.py
+# Kiểm thử Detection Rules & Correlation
+.venv/bin/pytest tests/test_detection.py tests/test_correlation.py
 
-# Kiểm thử Web Dashboard
-.venv/bin/pytest tests/test_dashboard.py
+# Kiểm thử Alert Management & Life-cycle
+.venv/bin/pytest tests/test_alert_management.py
 
 # Kiểm thử Tích hợp Chu trình E2E Toàn hệ thống
-.venv/bin/pytest tests/test_full_system_e2e.py
+.venv/bin/pytest tests/test_full_system_e2e.py tests/test_phase4_e2e.py
 
-# Kiểm thử An ninh & Độ tin cậy (SQLi, XSS, Replay, Integrity)
+# Kiểm thử An ninh & Độ tin cậy (SQLi, DOM XSS, CSRF, Token, Payload Bounds)
 .venv/bin/pytest tests/test_security_reliability.py
 ```
 
@@ -357,18 +388,21 @@ Chạy riêng từng bộ kiểm thử chuyên biệt:
 Dự án cung cấp bộ tài liệu kiến trúc và đặc tả chi tiết trong thư mục `docs/`:
 
 - 📐 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):** Kiến trúc hệ thống toàn diện, sơ đồ ERD chi tiết, các sequence diagrams luồng dữ liệu, và phân tích thiết kế.
-- 📜 **[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md):** Đặc tả Common Telemetry Envelope 1.0, cấu trúc payload từng loại telemetry, timestamp ownership, và validator bounds.
-- 📡 **[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md):** Chi tiết toàn bộ REST APIs, HTTP status codes, mã lỗi, và các route của Web Dashboard.
-- 🧪 **[docs/TEST_PLAN.md](docs/TEST_PLAN.md):** Kế hoạch kiểm thử, phạm vi, kịch bản chi tiết và ma trận nghiệm thu 214 test cases.
+- 📜 **[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md):** Đặc tả Common Telemetry Envelope 1.0, cấu trúc 9 thuộc tính tiến trình, cấu trúc FIM payload, timestamp ownership, và validator bounds.
+- 📡 **[docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md):** Chi tiết toàn bộ REST APIs, Web Console Session Auth, CSRF Protection, HTTP status codes, và mã lỗi.
+- 🧪 **[docs/TEST_PLAN.md](docs/TEST_PLAN.md):** Kế hoạch kiểm thử, phạm vi, kịch bản chi tiết và ma trận nghiệm thu 230 test cases.
+- 🎬 **[docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md):** Kịch bản kịch tính 5 bước và lời thoại chi tiết diễn tập bảo vệ trước Hội đồng chấm thi (5–7 phút).
+- 📊 **[docs/PRESENTATION_SLIDES_OUTLINE.md](docs/PRESENTATION_SLIDES_OUTLINE.md):** Đề cương 13 slide chuẩn học thuật tóm tắt toàn bộ nghiên cứu và công trình đồ án.
 - 🗺️ **[Lo_trinh_trien_khai_Mini_EDR_Linux.md](Lo_trinh_trien_khai_Mini_EDR_Linux.md):** Lộ trình 10 giai đoạn phát triển và nghiệm thu đề tài.
 
 ---
 
-## 12. Giới hạn Phạm vi Đồ án & Hướng Phát triển
+## 12. Khóa Phạm vi Đề tài & Giới hạn Học thuật (Scope Lock & Academic Boundaries)
 
-- **Môi trường phù hợp:** Hệ thống được thiết kế phục vụ mục đích nghiên cứu, học thuật và bảo vệ đồ án tốt nghiệp trong môi trường lab hoặc mạng nội bộ được ủy quyền.
-- **An toàn Endpoint:** Phiên bản đồ án chủ động **không tự động gửi lệnh `kill` tiến trình** từ xa nhằm đảm bảo an toàn tối đa cho máy trạm thực tế trong buổi trình diễn demo.
-- **Hướng mở rộng tương lai:**
-  - Chuyển đổi từ quét `/proc` sang công nghệ **eBPF** ở tầng kernel Linux để bắt sự kiện syscalls theo thời gian thực với độ trễ tính bằng microsecond.
-  - Hỗ trợ giao thức đẩy hai chiều gRPC / WebSockets để quản trị viên có thể gửi lệnh cách ly máy trạm (Host Isolation) ngay từ Web Console.
-  - Hỗ trợ kiến trúc cơ sở dữ liệu phân tán (PostgreSQL/TimescaleDB) khi mở rộng quy mô lên hàng ngàn endpoints.
+Nhằm đảm bảo tính tập trung, đúng đắn và khả thi cao nhất của một đồ án môn học Python / An toàn thông tin, dự án áp dụng nguyên tắc **Scope Lock**:
+
+1. **Phát hiện Dựa trên Quy tắc (Rule-Based Detection):** Hệ thống ưu tiên tính minh bạch, giải thích được (Explainable AI / Detection logic), không đưa vào các mô hình Machine Learning hộp đen không thể kiểm chứng trong lab.
+2. **Giới hạn Môi trường Linux:** Tập trung chuyên sâu vào giám sát kernel Linux qua `/proc`, POSIX file system (`os.lstat`), không phân tán nguồn lực sang Windows/macOS.
+3. **Quy mô Môi trường Lab:** Được thiết kế tối ưu cho mô hình phòng thí nghiệm và hệ thống mạng nội bộ quy mô vừa và nhỏ; sử dụng xác thực Bearer Token dùng chung và SQLite ở chế độ WAL.
+4. **Không Tự động Diệt Tiến trình (No Automatic Process Killing):** Để đảm bảo an toàn tuyệt đối cho hệ điều hành của người chấm thi trong buổi bảo vệ, hệ thống chỉ cảnh báo và đề xuất hành động cho quản trị viên (SOC Operator), không tự ý kill process hay cô lập tệp ngoài tầm kiểm soát.
+5. **Không Mở rộng Enterprise Bloat:** Không tự ý bổ sung các thành phần phức tạp không cần thiết cho đồ án Python như Kubernetes, Celery, Redis, PostgreSQL, eBPF kernel drivers, hoặc Enterprise SIEM.

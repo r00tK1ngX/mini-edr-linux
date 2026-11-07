@@ -55,8 +55,26 @@ class AlertRepository(BaseRepository):
             )
             ON CONFLICT(alert_key) DO UPDATE SET
                 title = excluded.title,
-                description = excluded.description,
-                severity = excluded.severity,
+                description = COALESCE(excluded.description, alerts.description),
+                severity = CASE
+                    WHEN excluded.severity = 'critical' OR alerts.severity = 'critical' THEN 'critical'
+                    WHEN excluded.severity = 'high'     OR alerts.severity = 'high'     THEN 'high'
+                    WHEN excluded.severity = 'medium'   OR alerts.severity = 'medium'   THEN 'medium'
+                    WHEN excluded.severity = 'low'      OR alerts.severity = 'low'      THEN 'low'
+                    ELSE 'info'
+                END,
+                status = CASE
+                    WHEN alerts.status IN ('resolved', 'dismissed') THEN 'new'
+                    ELSE alerts.status
+                END,
+                resolved_at = CASE
+                    WHEN alerts.status IN ('resolved', 'dismissed') THEN NULL
+                    ELSE alerts.resolved_at
+                END,
+                resolution_note = CASE
+                    WHEN alerts.status IN ('resolved', 'dismissed') THEN NULL
+                    ELSE alerts.resolution_note
+                END,
                 last_seen_at = excluded.last_seen_at,
                 updated_at = excluded.updated_at
             RETURNING *;

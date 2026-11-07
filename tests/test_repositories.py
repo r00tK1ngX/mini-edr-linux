@@ -405,7 +405,7 @@ def test_alert_repository_lifecycle_and_linking(db_path, sample_endpoint):
     assert res["resolved_at"] is not None
     assert res["resolution_note"] == "False positive verified"
 
-    # Test correlation: upserting same alert_key updates last_seen without duplicate row
+    # Test correlation: upserting same alert_key updates last_seen and reopens resolved alert
     updated_alert = alert_repo.create_or_update({
         "alert_key": "rule-privesc-lab-host-01",
         "agent_id": sample_endpoint["agent_id"],
@@ -415,3 +415,75 @@ def test_alert_repository_lifecycle_and_linking(db_path, sample_endpoint):
     })
     assert updated_alert["id"] == alert["id"]
     assert alert_repo.count() == 1
+    assert updated_alert["status"] == "new"
+    assert updated_alert["resolved_at"] is None
+
+
+def test_alert_severity_escalation_and_non_downgrade(db_path, sample_endpoint):
+    """Alert maintains highest observed severity and never downgrades on weaker events."""
+    alert_repo = AlertRepository(db_path)
+
+    # 1. Start with 'low' severity
+    a1 = alert_repo.create_or_update({
+        "alert_key": "test:escalate:key",
+        "agent_id": sample_endpoint["agent_id"],
+        "rule_id": "RULE_LOW",
+        "title": "Suspicious Activity",
+        "severity": "low",
+    })
+    assert a1["severity"] == "low"
+
+    # 2. Escalate to 'high'
+    a2 = alert_repo.create_or_update({
+        "alert_key": "test:escalate:key",
+        "agent_id": sample_endpoint["agent_id"],
+        "rule_id": "RULE_HIGH",
+        "title": "High Severity Intrusion",
+        "severity": "high",
+    })
+    assert a2["id"] == a1["id"]
+    assert a2["severity"] == "high"
+
+    # 3. Subsequent weaker event with 'info' or 'low' must NOT downgrade severity
+    a3 = alert_repo.create_or_update({
+        "alert_key": "test:escalate:key",
+        "agent_id": sample_endpoint["agent_id"],
+        "rule_id": "RULE_LOW",
+        "title": "Minor log event",
+        "severity": "low",
+    })
+    assert a3["id"] == a1["id"]
+    assert a3["severity"] == "high"  # Preserved highest severity
+
+
+def test_endpoint_heartbeat_coalesce_preserves_metadata(db_path):
+    """Subsequent heartbeats missing optional fields do NOT overwrite existing metadata with NULL."""
+    repo = EndpointRepository(db_path)
+
+    # 1. Initial full registration
+    e1 = repo.upsert({
+        "agent_id": "agent-coalesce-test",
+        "hostname": "test-box",
+        "ip_address": "10.0.0.55",
+        "os": "Linux Ubuntu",
+        "agent_version": "1.2.3",
+        "cpu_percent": 15.0,
+        "last_seen": "2026-11-05T10:00:00Z",
+    })
+    assert e1["ip_address"] == "10.0.0.55"
+    assert e1["agent_version"] == "1.2.3"
+
+    # 2. Heartbeat ping with None for ip_address and agent_version
+    e2 = repo.upsert({
+        "agent_id": "agent-coalesce-test",
+        "hostname": "test-box",
+        "ip_address": None,
+        "os": "Linux Ubuntu",
+        "agent_version": None,
+        "cpu_percent": 22.0,
+        "last_seen": "2026-11-05T10:01:00Z",
+    })
+    assert e2["ip_address"] == "10.0.0.55"  # Preserved via COALESCE
+    assert e2["agent_version"] == "1.2.3"   # Preserved via COALESCE
+    assert e2["cpu_percent"] == 22.0
+

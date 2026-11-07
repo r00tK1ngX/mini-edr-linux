@@ -236,7 +236,13 @@ class AgentOrchestrator:
                     summary["fim_synced"] = True
                     logger.info("Initial FIM baseline established and synced (%d files)", file_count)
                 else:
-                    changes = self.fim_monitor.check_for_changes()
+                    scan_res = self.fim_monitor.scan_for_changes() if hasattr(self.fim_monitor, "scan_for_changes") else None
+                    if isinstance(scan_res, tuple) and len(scan_res) == 2:
+                        new_baseline, changes = scan_res
+                    else:
+                        changes = self.fim_monitor.check_for_changes()
+                        new_baseline = None
+
                     if changes:
                         sec_events = self.fim_monitor.get_security_events(changes)
                         for evt in sec_events:
@@ -245,6 +251,10 @@ class AgentOrchestrator:
                         logger.warning("FIM detected and transmitted %d file changes", len(changes))
                     else:
                         logger.debug("FIM scan clean, no file changes detected")
+
+                    # Only advance baseline state if all events were transmitted successfully
+                    if new_baseline is not None and hasattr(self.fim_monitor, "commit_baseline"):
+                        self.fim_monitor.commit_baseline(new_baseline)
 
                 self.last_fim_scan_at = now
             except Exception as exc:

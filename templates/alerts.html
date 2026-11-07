@@ -154,23 +154,23 @@
               <td id="actions-{{ a.id }}">
                 <div style="display: flex; gap: 0.35rem; align-items: center;">
                   <!-- View Evidence -->
-                  <button type="button" class="btn btn-cyan btn-sm" onclick="viewEvidence({{ a.id }})">
+                  <button type="button" class="btn btn-cyan btn-sm btn-view-evidence" data-alert-id="{{ a.id }}">
                     EVIDENCE
                   </button>
 
                   <!-- Acknowledge Button -->
                   {% if a.status == 'new' %}
-                    <button type="button" id="btn-ack-{{ a.id }}" class="btn btn-amber btn-sm" onclick="acknowledgeAlert({{ a.id }})">
+                    <button type="button" id="btn-ack-{{ a.id }}" class="btn btn-amber btn-sm btn-acknowledge" data-alert-id="{{ a.id }}">
                       ACK
                     </button>
                   {% endif %}
 
                   <!-- Resolve / Dismiss Buttons -->
                   {% if a.status != 'resolved' %}
-                    <button type="button" class="btn btn-green btn-sm" onclick="promptResolveAlert({{ a.id }}, '{{ a.title|escape }}')">
+                    <button type="button" class="btn btn-green btn-sm btn-prompt-resolve" data-alert-id="{{ a.id }}" data-alert-title="{{ a.title }}">
                       RESOLVE
                     </button>
-                    <button type="button" class="btn btn-outline btn-sm" onclick="dismissAlert({{ a.id }})" title="Dismiss as False Positive">
+                    <button type="button" class="btn btn-outline btn-sm btn-dismiss" data-alert-id="{{ a.id }}" title="Dismiss as False Positive">
                       DISMISS
                     </button>
                   {% else %}

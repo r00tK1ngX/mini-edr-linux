@@ -40,15 +40,17 @@ Mini EDR Linux là giải pháp giám sát an ninh đầu cuối (Endpoint Detec
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
 │   │                        API Routing & Security Layer                            │   │
 │   │  - Bearer Token Auth Guard       - Schema Validation (Cerberus/JSON Schema)    │   │
-│   │  - Max Content Length (64 KB)    - Replay Attack Mitigation (UUIDv4 Dedup)     │   │
+│   │  - Max Content Length (16 MiB)   - Replay Attack Mitigation (UUIDv4 Dedup)     │   │
+│   │  - Operator Session & CSRF Guard - Rate Limiting & Parameterized DAL Protection│   │
 │   │  - Endpoints: /heartbeat, /telemetry/*, /file-baselines, /events, /alerts      │   │
 │   └───────────────────────────────────────┬────────────────────────────────────────┘   │
 │                                           │                                            │
 │                                           ▼                                            │
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
 │   │                           DETECTION ENGINE (Phát hiện)                         │   │
-│   │  - Rule Registry (Process & FIM Rules) - Correlation Engine (Multi-event)      │   │
-│   │  - Risk Scoring Algorithm (0 - 100)    - Alert Dispatcher & De-duplication     │   │
+│   │  - 7 Rules with MITRE ATT&CK Mapping - Correlation Engine (Multi-event)       │   │
+│   │  - Risk Scoring Algorithm (0 - 100)  - min_correlation_score Threshold Enforced│   │
+│   │  - Alert Dispatcher & De-duplication - Non-downgrade Severity Hierarchy        │   │
 │   └───────────────────────────────────────┬────────────────────────────────────────┘   │
 │                                           │                                            │
 │                                           ▼                                            │
@@ -63,8 +65,9 @@ Mini EDR Linux là giải pháp giám sát an ninh đầu cuối (Endpoint Detec
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
 │   │                          SQLite3 Database Engine                               │   │
 │   │  - WAL Mode (Write-Ahead Logging)       - Foreign Keys Enforced (PRAGMA fk=ON) │   │
-│   │  - Busy Timeout 5000ms                  - Automated Migration Runner           │   │
+│   │  - Busy Timeout 10000ms                 - Automated Migration Runner Checksum  │   │
 │   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                        │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
                                             │ Internal Data Query
                                             ▼
@@ -73,11 +76,12 @@ Mini EDR Linux là giải pháp giám sát an ninh đầu cuối (Endpoint Detec
 │                                                                                        │
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
 │   │ Flask Web Blueprint (server/web.py) + Jinja2 Security Escaped Templates        │   │
+│   │   - /login, /logout: Operator Session Authentication (Cyberpunk HUD Styling)   │   │
 │   │   - /dashboard : Network KPI Tiles, Resource Meters, Severity Matrix, Live feed│   │
 │   │   - /endpoints : Multi-agent Fleet Inventory, Live Search, Inspection Modals   │   │
-│   │   - /alerts    : Triage Console (Acknowledge, Resolve with Note, Dismiss AJAX) │   │
+│   │   - /alerts    : Triage Console (CSRF-Protected ACK, RESOLVE with Note, DISMISS)│  │
 │   │   - /events    : Security Audit Logs & FIM Telemetry Explorer                  │   │
-│   │   - static/    : Pure CSS3 Cyberpunk Grid & Vanilla ES6+ (Offline/Air-gapped)  │   │
+│   │   - static/    : Pure CSS3 Cyberpunk Grid, DOM XSS Sanitizer & Vanilla ES6+    │   │
 │   └────────────────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -96,13 +100,17 @@ Linux Agent hoạt động độc lập, gọn nhẹ, chạy ngầm trên máy k
    - Xử lý phân quyền an toàn: Trả về giá trị fallback hợp lệ khi gặp lỗi cấp quyền hoặc cấm truy cập phần cứng.
 
 2. **Process Collector (`agent/process_collector.py`):**
-   - Quét toàn diện bảng tiến trình của hệ điều hành Linux qua `/proc` bằng thư viện `psutil`.
-   - Trích xuất: `pid`, `ppid`, `name`, `username`, `exe_path`, `cmdline`, `cpu_percent`, `memory_percent`, `rss_bytes`, `process_started_at`.
+   - Quét bảng tiến trình của hệ điều hành Linux qua `/proc` bằng thư viện `psutil`.
+   - Trích xuất 9 thuộc tính cốt lõi của tiến trình: `pid`, `ppid`, `process_name` (hoặc `name`), `username`, `exe_path`, `cmdline`, `cpu_percent`, `memory_percent`, `rss_bytes`, `process_started_at`.
+   - Thu thập có trách nhiệm trong môi trường lab học thuật: Ghi nhận đường dẫn thực thi và command line để phục vụ phân loại rủi ro mà không can thiệp sâu vào bộ nhớ tiến trình của hệ điều hành.
    - Bắt các ngoại lệ đặc trưng của Linux kernel: `NoSuchProcess` (tiến trình tắt giữa chừng), `AccessDenied` (tiến trình của root/kernel thread), và `ZombieProcess`.
 
 3. **File Integrity Monitoring (`agent/file_integrity.py`):**
-   - Giám sát các tệp tin cấu hình và nhị phân then chốt (như `/etc/passwd`, `/etc/shadow`, `/usr/bin/sudo`, các tệp trong `/bin`, `/sbin`).
+   - Giám sát các tệp tin cấu hình và nhị phân then chốt (như `/etc/passwd`, `/etc/shadow`, `/usr/bin/sudo`, các tệp trong `/bin`, `/sbin`, `/tmp`).
    - Tính toán mã băm mật mã học **SHA-256** (chuẩn 64 ký tự hex chữ thường).
+   - **Cơ chế Two-Phase Commit:** Tách biệt việc phát hiện (`scan_for_changes`) khỏi việc ghi nhận (`commit_baseline`). Trạng thái baseline chỉ được cập nhật sau khi các bản tin sự kiện FIM đã được gửi thành công lên Server, ngăn ngừa hoàn toàn tình trạng mất mát sự kiện khi đứt kết nối mạng.
+   - **Chống Tấn công Vượt quyền Liên kết (Symlink Traversal / TOCTOU):** Sử dụng `os.lstat()` và kiểm tra cờ `stat.S_ISLNK()` trước khi mở đọc nội dung tệp; từ chối băm hoặc theo dõi symlink giả mạo trỏ tới tệp nhạy cảm bên ngoài.
+   - **Tối ưu Hiệu năng Quick-check Caching:** So khớp nhanh `mtime_ns`, `file_size_bytes` và `file_mode` trước khi đọc toàn bộ tệp để tính mã băm SHA-256, giảm thiểu tải I/O trên ổ đĩa.
    - Phát hiện 3 loại biến động tệp tin:
      - `created`: Tệp mới xuất hiện trong thư mục được giám sát.
      - `modified`: Tệp bị thay đổi nội dung (mã băm khác biệt) hoặc thay đổi quyền hạn `file_mode`.
@@ -122,17 +130,17 @@ Linux Agent hoạt động độc lập, gọn nhẹ, chạy ngầm trên máy k
 ### 2.2. Phân hệ API Server & Data Ingestion (`server/routes.py`, `server/app.py`)
 
 - **Kiến trúc Application Factory:** Khởi tạo ứng dụng Flask qua hàm `create_app(test_config=None)`, hỗ trợ cấu hình tách biệt giữa môi trường kiểm thử và vận hành thật.
-- **Xác thực Bearer Token:** Kiểm tra header `Authorization: Bearer <TOKEN>` thông qua middleware decorator `require_api_token`.
-- **Kiểm soát kích thước (Rate & Payload Limiting):** Cấu hình `MAX_CONTENT_LENGTH = 64 * 1024` (64 KB) ngăn chặn tấn công từ chối dịch vụ (DoS) bằng payload khổng lồ.
+- **Xác thực Bearer Token:** Kiểm tra header `Authorization: Bearer <TOKEN>` thông qua middleware decorator `require_api_token`. Khi ở môi trường vận hành (production mode), hàm factory tự động kiểm tra độ phức tạp của `EDR_API_TOKEN` ($\ge 32$ ký tự, không dùng giá trị placeholder mặc định).
+- **Kiểm soát kích thước (Rate & Payload Limiting):** Cấu hình `MAX_CONTENT_LENGTH = 16 * 1024 * 1024` (16 MiB default, tùy biến qua biến môi trường `EDR_MAX_CONTENT_LENGTH`) đảm bảo tiếp nhận đầy đủ các snapshot bảng tiến trình kích thước lớn của hệ thống Linux mà không bị ngắt kết nối.
 - **Xác thực dữ liệu chặt chẽ (Schema Validation):**
   - Kiểm tra tính hợp lệ của `message_id` (chuẩn UUIDv4).
   - Kiểm tra `schema_version` (bắt buộc `"1.0"`).
-  - Kiểm tra phạm vi đo lường metrics (CPU/RAM/Disk nằm trong đoạn $[0, 100]$).
+  - Kiểm tra phạm vi đo lường metrics (CPU/RAM/Disk nằm trong đoạn $[0, 100]$, Uptime $\ge 0$).
   - Chống trùng lặp (Idempotency): Trả về HTTP 200 cho bản tin gửi lặp có cùng nội dung hoặc HTTP 409 khi xung đột dữ liệu.
 
 ---
 
-### 2.3. Phân hệ Detection Engine & Phân tích Tương quan (`server/detection/`)
+### 2.3. Phân hệ Detection Engine & Phân tích Tương quan (`detection/`)
 
 Detection Engine chạy theo thời gian thực mỗi khi Server tiếp nhận dữ liệu telemetry tiến trình hoặc sự kiện toàn vẹn tệp:
 
@@ -142,29 +150,31 @@ Detection Engine chạy theo thời gian thực mỗi khi Server tiếp nhận d
                               ▼
                    ┌───────────────────────┐
                    │ Detection Engine Core │
-                   │(server/detection/...) │
+                   │  (detection/engine.py)│
                    └──────────┬────────────┘
                               │
            ┌──────────────────┴──────────────────┐
            ▼                                     ▼
 ┌─────────────────────────┐           ┌─────────────────────────┐
 │ Process Detection Rules │           │   FIM Detection Rules   │
-│  - Suspicious Process   │           │  - Sensitive File Change│
-│  - Shell Spawning       │           │  - Critical Hash Mod    │
-│  - High CPU Anomalies   │           └──────────┬──────────────┘
-└──────────┬──────────────┘                      │
+│  - Suspicious Path/Tool │           │  - Sensitive File Change│
+│  - Shell Spawning       │           │  - Dropped Binary       │
+│  - High CPU Anomalies   │           │  - Critical File Deleted│
+└──────────┬──────────────┘           │  - Service Unit Tamper  │
+           │                          └──────────┬──────────────┘
            │                                     │
            └──────────────────┬──────────────────┘
                               │ Triggered Events
                               ▼
                    ┌───────────────────────┐
                    │  Correlation Engine   │
-                   │(Multi-event, Weights) │
+                   │(detection/correlation)│
                    └──────────┬────────────┘
                               │
                               ▼
                    ┌───────────────────────┐
-                   │ Risk Score Evaluation │
+                   │ Risk Score & Threshold│
+                   │min_correlation_score  │
                    │  Score: 0 to 100 (Max)│
                    └──────────┬────────────┘
                               │
@@ -172,34 +182,41 @@ Detection Engine chạy theo thời gian thực mỗi khi Server tiếp nhận d
                    ┌───────────────────────┐
                    │ Alert Dispatcher      │
                    │(Deduplication by key) │
+                   │Non-downgrade Severity │
                    └──────────┬────────────┘
                               │
                               ▼
             Saved to `alerts` & `alert_events`
 ```
 
-1. **Rule Registry (`server/detection/rules.py`):**
-   - Đăng ký danh mục các quy tắc phát hiện rõ ràng (explainable rules):
-     - `RULE_SUSPICIOUS_PROCESS`: Phát hiện các công cụ pentest/hack điển hình (`nc`, `netcat`, `nmap`, `mimikatz`, `chisel`, `socat`) hoặc chạy từ các đường dẫn bất thường (`/tmp`, `/dev/shm`).
-     - `RULE_SHELL_SPAWN`: Phát hiện tiến trình shell tương tác (`bash`, `sh`, `zsh`) được sinh ra từ các tiến trình web server (`apache2`, `nginx`) hoặc môi trường runtime (`python`, `php`).
-     - `RULE_HIGH_CPU_PROCESS`: Phát hiện dấu hiệu đào tiền ảo (cryptomining) hoặc tấn công từ chối dịch vụ khi một tiến trình chiếm dụng $> 85\%$ CPU trong chu kỳ quét.
-     - `RULE_FIM_SENSITIVE_FILE`: Phát hiện hành vi can thiệp trái phép vào các tệp bảo mật hệ thống (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `/root/.ssh/authorized_keys`).
+1. **Rule Registry (`detection/rules.py`):**
+   - Đăng ký danh mục 7 quy tắc an ninh tường minh, ánh xạ trực tiếp ma trận **MITRE ATT&CK**:
+     - `rule-proc-suspicious-path` (`RULE_SUSPICIOUS_PROCESS`): Phát hiện công cụ pentest/hack điển hình (`nc`, `netcat`, `nmap`, `mimikatz`, `socat`) hoặc chạy từ các đường dẫn bất thường (`/tmp`, `/dev/shm`, `/var/tmp`). Mức độ: `CRITICAL`. MITRE: `T1059.004`.
+     - `rule-proc-shell-spawn` (`RULE_SHELL_SPAWN`): Phát hiện tiến trình shell tương tác (`bash`, `sh`, `zsh`) được sinh ra dưới ngữ cảnh daemon/web service (`www-data`, `apache2`, `nginx`). Mức độ: `HIGH`. MITRE: `T1059.004`.
+     - `rule-proc-high-cpu` (`RULE_HIGH_CPU_PROCESS`): Phát hiện dấu hiệu đào tiền ảo (cryptomining) hoặc tấn công từ chối dịch vụ khi một tiến trình chiếm dụng $\ge 85.0\%$ CPU trong chu kỳ quét. Mức độ: `MEDIUM`. MITRE: `T1496`.
+     - `rule-fim-sensitive-file` (`RULE_FIM_SENSITIVE_FILE`): Phát hiện hành vi can thiệp trái phép vào các tệp bảo mật hệ thống cốt lõi (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`). Mức độ: `HIGH`. MITRE: `T1003.008`.
+     - `rule-fim-dropped-binary` (`RULE_FIM_DROPPED_BINARY`): Phát hiện tệp thực thi ELF hoặc script mới được thả vào các thư mục tạm (`/tmp`, `/var/tmp`, `/dev/shm`). Mức độ: `HIGH`. MITRE: `T1105`.
+     - `rule-fim-critical-deleted` (`RULE_FIM_CRITICAL_DELETED`): Phát hiện xóa tệp hệ thống hoặc tệp cấu hình an ninh trọng yếu. Mức độ: `HIGH`. MITRE: `T1070.004`.
+     - `rule-fim-service-tamper` (`RULE_FIM_SERVICE_TAMPER`): Phát hiện can thiệp hoặc thay đổi trái phép unit service (`systemd`). Mức độ: `MEDIUM`. MITRE: `T1543.002`.
 
 2. **Cơ chế Phân tích Tương quan & Tính điểm Rủi ro (Correlation & Risk Scoring):**
-   - Kết hợp nhiều dấu hiệu trên cùng một endpoint trong cửa sổ thời gian xác định.
-   - Tránh dương tính giả (False Positive) bằng trọng số tương quan: Ví dụ một tiến trình có CPU cao đơn thuần chỉ tính rủi ro thấp/trung bình, nhưng nếu tiến trình đó nằm trong `/tmp` và FIM đồng thời báo `/etc/shadow` bị sửa đổi, hệ số rủi ro lập tức tăng vọt lên mức `CRITICAL` ($> 80$).
+   - Động cơ tương quan (`detection/correlation.py`) phân tích chuỗi sự kiện trên cùng một endpoint trong cửa sổ thời gian trượt (Time window = 300s).
+   - Ngưỡng kích hoạt tương quan được thực thi nghiêm ngặt: Phải có ít nhất 2 yếu tố vi phạm và tổng điểm rủi ro vượt ngưỡng `min_correlation_score >= 60.0` thì mới sinh ra một cảnh báo tổng hợp (Correlated Alert).
 
-3. **Khử trùng Cảnh báo (Alert De-duplication):**
+3. **Bảo tồn Mức độ Nghiêm trọng & Tái kích hoạt Cảnh báo (Non-downgrade & Reopening):**
    - Sử dụng khóa tổng hợp `alert_key` dạng `<agent_id>:<rule_id>:<target_fingerprint>`.
-   - Nếu sự cố tương tự tiếp tục xảy ra khi cảnh báo chưa đóng, hệ thống chỉ cập nhật `last_seen_at` và gắn thêm sự kiện vào bảng liên kết `alert_events` mà không tạo rác cảnh báo.
+   - **Non-downgrade Severity:** Khi cập nhật cảnh báo hiện có, mức độ nghiêm trọng không bao giờ bị hạ thấp, tuân thủ thang thứ bậc: `info < low < medium < high < critical`.
+   - **Alert Reopening:** Nếu cảnh báo đã được quản trị viên giải quyết (`resolved`), nhưng sau đó sự kiện vi phạm tương tự lại tiếp diễn, hệ thống tự động tái kích hoạt cảnh báo về trạng thái `new`, xóa ghi chú cũ và lưu vết thời điểm tái phát.
 
 ---
 
 ### 2.4. Phân hệ Web Dashboard & SOC Console (`server/web.py`)
 
 Bảng điều khiển Web phục vụ chuyên viên SOC theo phong cách Cyberpunk Hacker:
+- **Xác thực Phiên Làm việc (Operator Session Auth):** Màn hình đăng nhập an toàn (`/login`), lưu trạng thái phiên có chữ ký mã hóa bằng `SECRET_KEY` được cấu hình từ môi trường.
+- **Bảo vệ Chống Tấn công CSRF:** Toàn bộ các thao tác thay đổi trạng thái an ninh (`/alerts/<id>/acknowledge`, `/alerts/<id>/resolve`, `/alerts/<id>/dismiss`) đều yêu cầu token bảo vệ CSRF (`X-CSRF-Token`).
 - **Độc lập hoàn toàn (Air-gapped Ready):** 100% tài nguyên CSS và JS được lưu trữ cục bộ tại `static/`, không phụ thuộc vào Internet hay CDN bên ngoài.
-- **Chống tấn công XSS:** Triệt để khử ký tự nguy hiểm với cơ chế `escapeHtml()` trong JavaScript và ngữ cảnh thoát chuỗi an toàn của Jinja2.
+- **Chống triệt để DOM XSS & Attribute Injection:** Mọi chuỗi dữ liệu telemetry, evidence và thông báo toast đều được lọc qua hàm `escapeHtml()` tại Frontend và cơ chế autoescape của Jinja2. Các trình xử lý sự kiện `onclick` trực tiếp được loại bỏ hoàn toàn, chuyển sang mô hình event delegation an toàn với các thuộc tính dữ liệu `data-action` và `data-id`.
 - **Quản lý Vòng đời Sự cố:** Hỗ trợ thực thi AJAX tức thời các thao tác:
   - `Acknowledge`: Tiếp nhận xử lý sự cố.
   - `Resolve`: Đóng sự cố kèm ghi chú nguyên nhân (`resolution_note`).
@@ -430,18 +447,24 @@ sequenceDiagram
    - Mỗi bản tin telemetry mang một định danh duy nhất `message_id` chuẩn UUIDv4.
    - Server kiểm tra ràng buộc duy nhất trong cơ sở dữ liệu; nếu bản tin đã tồn tại với cùng nội dung thì trả về HTTP 200, nếu xung đột dữ liệu sẽ trả về HTTP 409.
 5. **Giới hạn Tài nguyên & Phòng chống DoS:**
-   - Cấu hình `MAX_CONTENT_LENGTH = 64KB` chặn đứng các payload dung lượng lớn gây quá tải RAM.
-   - SQLite cấu hình ở chế độ WAL (Write-Ahead Logging) cho phép đọc và ghi song song mà không bị nghẽn (locking). Timeout chờ khóa cơ sở dữ liệu là 5.000 ms.
+   - Cấu hình `MAX_CONTENT_LENGTH = 16 MiB` (16 * 1024 * 1024 bytes, tùy biến qua `EDR_MAX_CONTENT_LENGTH`) đảm bảo tiếp nhận đầy đủ bảng tiến trình của hệ điều hành mà không bị cắt tỉa.
+   - SQLite cấu hình ở chế độ WAL (Write-Ahead Logging) cho phép đọc và ghi song song mà không bị nghẽn (locking). Timeout chờ khóa cơ sở dữ liệu được nâng lên 10.000 ms (`PRAGMA busy_timeout = 10000`).
 6. **Vận hành An toàn trên Endpoint:**
    - Linux Agent không yêu cầu đặc quyền can thiệp nhân kernel.
    - Không tự động thực thi lệnh tiêu diệt tiến trình (`kill -9`) để đảm bảo tuyệt đối an toàn cho máy trạm trong môi trường học thuật và demo.
 
 ---
 
-## 6. Giới hạn Thiết kế và Hướng phát triển
+## 6. Khóa Phạm vi Đề tài & Giới hạn Học thuật (Scope Lock & Academic Boundaries)
 
-- **Phạm vi hiện tại:** Mini EDR được thiết kế chuyên biệt cho hệ điều hành Linux với cơ sở dữ liệu nhúng SQLite, phù hợp quy mô lab từ 1 đến 50 endpoints.
-- **Hướng mở rộng tương lai:**
-  - Hỗ trợ eBPF (Extended Berkeley Packet Filter) để giám sát syscalls ở tầng kernel với hiệu năng cao hơn so với quét `/proc`.
-  - Tích hợp giao thức gRPC hoặc WebSockets hai chiều cho phép đẩy lệnh phản ứng tức thời từ Server xuống Agent (Isolate host, terminate process).
-  - Hỗ trợ phân tán backend với PostgreSQL hoặc Elasticsearch khi số lượng endpoints mở rộng lên hàng nghìn thiết bị.
+Nhằm đảm bảo tính trung thực, chuẩn mực kỹ thuật và tính khả thi của một đồ án môn học Python / An toàn thông tin:
+
+1. **Phát hiện Dựa trên Quy tắc (Rule-Based Detection):** Hệ thống ưu tiên tính minh bạch, giải thích được (Explainable AI / Detection logic), không đưa vào các mô hình Machine Learning hộp đen không thể kiểm chứng trong lab.
+2. **Giới hạn Môi trường Linux:** Tập trung chuyên sâu vào giám sát kernel Linux qua `/proc`, POSIX file system (`os.lstat`), không phân tán nguồn lực sang Windows/macOS.
+3. **Quy mô Môi trường Lab:** Được thiết kế tối ưu cho mô hình phòng thí nghiệm và hệ thống mạng nội bộ quy mô vừa và nhỏ; sử dụng xác thực Bearer Token dùng chung và SQLite ở chế độ WAL.
+4. **Không Tự động Diệt Tiến trình (No Automatic Process Killing):** Để đảm bảo an toàn tuyệt đối cho hệ điều hành của người chấm thi trong buổi bảo vệ, hệ thống chỉ cảnh báo và đề xuất hành động cho quản trị viên (SOC Operator), không tự ý kill process hay cô lập tệp ngoài tầm kiểm soát.
+5. **Không Mở rộng Enterprise Bloat:** Không tự ý bổ sung các thành phần phức tạp không cần thiết cho đồ án Python như Kubernetes, Celery, Redis, PostgreSQL, eBPF kernel drivers, hoặc Enterprise SIEM.
+6. **Hướng mở rộng tương lai:**
+   - Hỗ trợ eBPF (Extended Berkeley Packet Filter) để giám sát syscalls ở tầng kernel với hiệu năng cao hơn so với quét `/proc`.
+   - Tích hợp giao thức gRPC hoặc WebSockets hai chiều cho phép đẩy lệnh phản ứng tức thời từ Server xuống Agent (Isolate host, terminate process).
+   - Hỗ trợ phân tán backend với PostgreSQL hoặc TimescaleDB khi số lượng endpoints mở rộng lên hàng nghìn thiết bị.

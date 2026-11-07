@@ -50,12 +50,29 @@
       "base_score": 50,
       "description": "Process is running from a hidden file or hidden directory path"
     },
+    "rule-proc-shell-spawn": {
+      "enabled": true,
+      "name": "Suspicious Shell Spawned by Server or Daemon",
+      "target_shells": ["sh", "bash", "dash", "zsh"],
+      "suspicious_users": ["www-data", "apache", "nginx", "nobody", "daemon"],
+      "severity": "high",
+      "base_score": 60,
+      "description": "Interactive command shell spawned under web server or daemon context"
+    },
     "rule-fim-sensitive-tampered": {
       "enabled": true,
       "name": "Critical System File Tampering",
       "severity": "high",
       "base_score": 60,
       "description": "Integrity violation on a sensitive system configuration or authentication file"
+    },
+    "rule-fim-dropped-binary": {
+      "enabled": true,
+      "name": "Dropped Binary in Temporary Directory",
+      "suspicious_paths": ["/tmp", "/var/tmp", "/dev/shm"],
+      "severity": "medium",
+      "base_score": 40,
+      "description": "New binary or executable file created in temporary or shared-memory directory"
     },
     "rule-correlated-multistage": {
       "enabled": true,

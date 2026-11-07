@@ -16,10 +16,12 @@ from agent.file_integrity import (
     inspect_file,
     scan_monitored_paths,
 )
-from agent.main import (
-    AgentConfig,
-    AgentOrchestrator,
-)
+def __getattr__(name: str):
+    if name in ("AgentConfig", "AgentOrchestrator"):
+        from agent.main import AgentConfig, AgentOrchestrator
+        mapping = {"AgentConfig": AgentConfig, "AgentOrchestrator": AgentOrchestrator}
+        return mapping[name]
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 from agent.process_collector import (
     ProcessCollector,
     collect_process_snapshot,

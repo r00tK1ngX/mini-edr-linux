@@ -40,6 +40,7 @@ class DetectionResult:
     evidence: Dict[str, Any] = field(default_factory=dict)
     fingerprint: Optional[str] = None
     event_type: str = "security.detection"
+    mitre_attack: Optional[str] = None
 
 
 class BaseRule(ABC):
@@ -53,6 +54,7 @@ class BaseRule(ABC):
         severity: str = "medium",
         base_score: int = 30,
         enabled: bool = True,
+        mitre_attack: Optional[str] = None,
     ):
         self.rule_id = rule_id
         self.name = name
@@ -60,6 +62,7 @@ class BaseRule(ABC):
         self.severity = severity
         self.base_score = max(0, min(100, int(base_score)))
         self.enabled = enabled
+        self.mitre_attack = mitre_attack
 
     @abstractmethod
     def evaluate(self, context: Dict[str, Any]) -> Optional[DetectionResult]:
@@ -81,6 +84,7 @@ class ProcessHighCpuRule(BaseRule):
         severity: str = "medium",
         base_score: int = 30,
         enabled: bool = True,
+        mitre_attack: str = "T1496: Resource Hijacking",
     ):
         super().__init__(
             rule_id=rule_id,
@@ -89,6 +93,7 @@ class ProcessHighCpuRule(BaseRule):
             severity=severity,
             base_score=base_score,
             enabled=enabled,
+            mitre_attack=mitre_attack,
         )
         self.threshold_percent = float(threshold_percent)
 
@@ -112,6 +117,7 @@ class ProcessHighCpuRule(BaseRule):
                 "exe_path": exe_path,
                 "cpu_percent": round(float(cpu_percent), 2),
                 "threshold_percent": self.threshold_percent,
+                "mitre_attack": self.mitre_attack,
             }
             fingerprint = f"proc:high_cpu:{agent_id}:{pid}:{proc_name}"
             return DetectionResult(
@@ -124,6 +130,7 @@ class ProcessHighCpuRule(BaseRule):
                 evidence=evidence,
                 fingerprint=fingerprint,
                 event_type="process.anomaly.high_cpu",
+                mitre_attack=self.mitre_attack,
             )
         return None
 
@@ -139,6 +146,7 @@ class ProcessHighMemoryRule(BaseRule):
         severity: str = "medium",
         base_score: int = 30,
         enabled: bool = True,
+        mitre_attack: str = "T1499: Endpoint Denial of Service",
     ):
         super().__init__(
             rule_id=rule_id,
@@ -147,6 +155,7 @@ class ProcessHighMemoryRule(BaseRule):
             severity=severity,
             base_score=base_score,
             enabled=enabled,
+            mitre_attack=mitre_attack,
         )
         self.threshold_percent = float(threshold_percent)
 
@@ -171,6 +180,7 @@ class ProcessHighMemoryRule(BaseRule):
                 "memory_percent": round(float(mem_percent), 2),
                 "rss_bytes": rss_bytes,
                 "threshold_percent": self.threshold_percent,
+                "mitre_attack": self.mitre_attack,
             }
             fingerprint = f"proc:high_mem:{agent_id}:{pid}:{proc_name}"
             return DetectionResult(
@@ -183,6 +193,7 @@ class ProcessHighMemoryRule(BaseRule):
                 evidence=evidence,
                 fingerprint=fingerprint,
                 event_type="process.anomaly.high_memory",
+                mitre_attack=self.mitre_attack,
             )
         return None
 
@@ -198,6 +209,7 @@ class ProcessSuspiciousPathRule(BaseRule):
         severity: str = "high",
         base_score: int = 50,
         enabled: bool = True,
+        mitre_attack: str = "T1036: Masquerading",
     ):
         super().__init__(
             rule_id=rule_id,
@@ -206,6 +218,7 @@ class ProcessSuspiciousPathRule(BaseRule):
             severity=severity,
             base_score=base_score,
             enabled=enabled,
+            mitre_attack=mitre_attack,
         )
         self.suspicious_paths = [p.rstrip("/") for p in (suspicious_paths or DEFAULT_SUSPICIOUS_PATHS)]
 
@@ -232,6 +245,7 @@ class ProcessSuspiciousPathRule(BaseRule):
                     "exe_path": norm_path,
                     "matched_suspicious_path": sp,
                     "username": context.get("username"),
+                    "mitre_attack": self.mitre_attack,
                 }
                 fingerprint = f"proc:suspicious_path:{agent_id}:{pid}:{norm_path}"
                 return DetectionResult(
@@ -244,6 +258,7 @@ class ProcessSuspiciousPathRule(BaseRule):
                     evidence=evidence,
                     fingerprint=fingerprint,
                     event_type="process.suspicious.execution_path",
+                    mitre_attack=self.mitre_attack,
                 )
         return None
 
@@ -258,6 +273,7 @@ class ProcessHiddenBinaryRule(BaseRule):
         severity: str = "high",
         base_score: int = 50,
         enabled: bool = True,
+        mitre_attack: str = "T1564.001: Hidden Files and Directories",
     ):
         super().__init__(
             rule_id=rule_id,
@@ -266,6 +282,7 @@ class ProcessHiddenBinaryRule(BaseRule):
             severity=severity,
             base_score=base_score,
             enabled=enabled,
+            mitre_attack=mitre_attack,
         )
 
     def evaluate(self, context: Dict[str, Any]) -> Optional[DetectionResult]:
@@ -298,6 +315,7 @@ class ProcessHiddenBinaryRule(BaseRule):
                 "process_name": proc_name,
                 "exe_path": exe_path,
                 "detection_reason": reason,
+                "mitre_attack": self.mitre_attack,
             }
             fingerprint = f"proc:hidden_bin:{agent_id}:{pid}:{proc_name}"
             return DetectionResult(
@@ -310,6 +328,82 @@ class ProcessHiddenBinaryRule(BaseRule):
                 evidence=evidence,
                 fingerprint=fingerprint,
                 event_type="process.suspicious.hidden_binary",
+                mitre_attack=self.mitre_attack,
+            )
+        return None
+
+
+class ProcessShellSpawnRule(BaseRule):
+    """Detects command shells (bash, sh, zsh, dash) spawned under daemon or web service contexts."""
+
+    def __init__(
+        self,
+        rule_id: str = "rule-proc-shell-spawn",
+        name: str = "Interactive Shell Spawned Under Daemon Context",
+        target_shells: Optional[List[str]] = None,
+        suspicious_users: Optional[List[str]] = None,
+        severity: str = "high",
+        base_score: int = 60,
+        enabled: bool = True,
+        mitre_attack: str = "T1059.004: Unix Shell",
+    ):
+        super().__init__(
+            rule_id=rule_id,
+            name=name,
+            description="Command shell executed in unprivileged web or daemon context",
+            severity=severity,
+            base_score=base_score,
+            enabled=enabled,
+            mitre_attack=mitre_attack,
+        )
+        self.target_shells = set(target_shells or ["sh", "bash", "dash", "zsh"])
+        self.suspicious_users = set(suspicious_users or ["www-data", "apache", "nginx", "nobody", "daemon"])
+
+    def evaluate(self, context: Dict[str, Any]) -> Optional[DetectionResult]:
+        if not self.enabled:
+            return None
+
+        proc_name = context.get("process_name", "")
+        exe_path = context.get("exe_path", "")
+        username = context.get("username", "")
+        parent_name = context.get("parent_name", "")
+
+        is_shell = proc_name in self.target_shells or any(
+            exe_path.endswith(f"/{sh}") for sh in self.target_shells
+        )
+
+        if not is_shell:
+            return None
+
+        # Check suspicious conditions: daemon user, web parent, or explicit suspicious flag
+        is_suspicious_user = username in self.suspicious_users
+        is_suspicious_parent = parent_name in ("nginx", "apache2", "httpd", "python", "python3", "php", "node")
+        explicit_suspicious = bool(context.get("suspicious_spawn", False))
+
+        if is_suspicious_user or is_suspicious_parent or explicit_suspicious:
+            agent_id = context.get("agent_id", "unknown")
+            pid = context.get("pid", 0)
+            evidence = {
+                "pid": pid,
+                "ppid": context.get("ppid"),
+                "process_name": proc_name,
+                "exe_path": exe_path,
+                "username": username,
+                "parent_name": parent_name,
+                "mitre_attack": self.mitre_attack,
+            }
+            fingerprint = f"proc:shell_spawn:{agent_id}:{pid}:{proc_name}"
+            return DetectionResult(
+                rule_id=self.rule_id,
+                rule_name=self.name,
+                title=f"Suspicious shell spawned: '{proc_name}' (PID: {pid}, User: {username or 'unknown'})",
+                description=f"Command interpreter '{proc_name}' spawned in daemon context (User: {username}, Parent: {parent_name}). Potential reverse shell.",
+                severity=self.severity,
+                risk_score=self.base_score,
+                evidence=evidence,
+                fingerprint=fingerprint,
+                event_type="process.suspicious.shell_spawn",
+                mitre_attack=self.mitre_attack,
             )
         return None
 
@@ -325,6 +419,7 @@ class FimSensitiveFileRule(BaseRule):
         severity: str = "high",
         base_score: int = 60,
         enabled: bool = True,
+        mitre_attack: str = "T1565.001: Stored Data Manipulation / T1098: Account Manipulation",
     ):
         super().__init__(
             rule_id=rule_id,
@@ -333,6 +428,7 @@ class FimSensitiveFileRule(BaseRule):
             severity=severity,
             base_score=base_score,
             enabled=enabled,
+            mitre_attack=mitre_attack,
         )
         self.sensitive_files = set(sensitive_files or DEFAULT_SENSITIVE_FILES)
 
@@ -378,6 +474,7 @@ class FimSensitiveFileRule(BaseRule):
                 "event_type": event_type,
                 "action": action,
                 "evidence": evidence,
+                "mitre_attack": self.mitre_attack,
             }
             fingerprint = f"fim:sensitive:{agent_id}:{norm_path}:{action}"
             return DetectionResult(
@@ -390,6 +487,83 @@ class FimSensitiveFileRule(BaseRule):
                 evidence=evidence_data,
                 fingerprint=fingerprint,
                 event_type="fim.critical_file_tampered",
+                mitre_attack=self.mitre_attack,
+            )
+        return None
+
+
+class FimDroppedBinaryRule(BaseRule):
+    """Detects creation of executable files or binaries in temporary / world-writable paths."""
+
+    def __init__(
+        self,
+        rule_id: str = "rule-fim-dropped-binary",
+        name: str = "Dropped Binary in Temporary Directory",
+        suspicious_paths: Optional[List[str]] = None,
+        severity: str = "medium",
+        base_score: int = 40,
+        enabled: bool = True,
+        mitre_attack: str = "T1105: Ingress Tool Transfer",
+    ):
+        super().__init__(
+            rule_id=rule_id,
+            name=name,
+            description="New file or binary created in temporary or shared-memory directory",
+            severity=severity,
+            base_score=base_score,
+            enabled=enabled,
+            mitre_attack=mitre_attack,
+        )
+        self.suspicious_paths = [p.rstrip("/") for p in (suspicious_paths or DEFAULT_SUSPICIOUS_PATHS)]
+
+    def evaluate(self, context: Dict[str, Any]) -> Optional[DetectionResult]:
+        if not self.enabled:
+            return None
+
+        event_type = context.get("event_type", "")
+        # Only evaluate file creation events
+        if not (event_type in ("fim_file_created", "file.created") or "created" in event_type):
+            return None
+
+        raw_evidence = context.get("evidence") or context.get("evidence_json") or {}
+        if isinstance(raw_evidence, str):
+            try:
+                evidence = json.loads(raw_evidence)
+            except Exception:
+                evidence = {}
+        elif isinstance(raw_evidence, dict):
+            evidence = raw_evidence
+        else:
+            evidence = {}
+
+        file_path = evidence.get("file_path") or context.get("file_path")
+        if not file_path or not isinstance(file_path, str):
+            return None
+
+        norm_path = os.path.normpath(file_path.strip())
+        is_dropped = any(norm_path == sp or norm_path.startswith(sp + "/") for sp in self.suspicious_paths)
+
+        if is_dropped:
+            agent_id = context.get("agent_id", "unknown")
+            evidence_data = {
+                "file_path": norm_path,
+                "event_type": event_type,
+                "action": "created",
+                "evidence": evidence,
+                "mitre_attack": self.mitre_attack,
+            }
+            fingerprint = f"fim:dropped:{agent_id}:{norm_path}"
+            return DetectionResult(
+                rule_id=self.rule_id,
+                rule_name=self.name,
+                title=f"Dropped file detected in temporary path: '{norm_path}'",
+                description=f"File '{norm_path}' was created in suspicious directory. Potential stage-1 dropper.",
+                severity=self.severity,
+                risk_score=self.base_score,
+                evidence=evidence_data,
+                fingerprint=fingerprint,
+                event_type="fim.dropped_binary",
+                mitre_attack=self.mitre_attack,
             )
         return None
 
@@ -463,7 +637,20 @@ class RuleRegistry:
             )
         )
 
-        # 5. FIM Sensitive File Rule
+        # 5. Shell Spawn Rule
+        shell_cfg = cfg_rules.get("rule-proc-shell-spawn", {})
+        self.rules.append(
+            ProcessShellSpawnRule(
+                rule_id="rule-proc-shell-spawn",
+                target_shells=shell_cfg.get("target_shells"),
+                suspicious_users=shell_cfg.get("suspicious_users"),
+                severity=shell_cfg.get("severity", "high"),
+                base_score=shell_cfg.get("base_score", 60),
+                enabled=shell_cfg.get("enabled", True),
+            )
+        )
+
+        # 6. FIM Sensitive File Rule
         fim_cfg = cfg_rules.get("rule-fim-sensitive-tampered", {})
         self.rules.append(
             FimSensitiveFileRule(
@@ -475,6 +662,18 @@ class RuleRegistry:
             )
         )
 
+        # 7. FIM Dropped Binary Rule
+        drop_cfg = cfg_rules.get("rule-fim-dropped-binary", {})
+        self.rules.append(
+            FimDroppedBinaryRule(
+                rule_id="rule-fim-dropped-binary",
+                suspicious_paths=drop_cfg.get("suspicious_paths", suspicious_paths),
+                severity=drop_cfg.get("severity", "medium"),
+                base_score=drop_cfg.get("base_score", 40),
+                enabled=drop_cfg.get("enabled", True),
+            )
+        )
+
     def evaluate_process(self, agent_id: str, proc: Dict[str, Any]) -> List[DetectionResult]:
         """Evaluate a single process observation across all applicable process rules."""
         context = dict(proc)
@@ -482,7 +681,7 @@ class RuleRegistry:
 
         results = []
         for rule in self.rules:
-            if isinstance(rule, (ProcessHighCpuRule, ProcessHighMemoryRule, ProcessSuspiciousPathRule, ProcessHiddenBinaryRule)):
+            if isinstance(rule, (ProcessHighCpuRule, ProcessHighMemoryRule, ProcessSuspiciousPathRule, ProcessHiddenBinaryRule, ProcessShellSpawnRule)):
                 res = rule.evaluate(context)
                 if res:
                     results.append(res)
@@ -495,7 +694,7 @@ class RuleRegistry:
 
         results = []
         for rule in self.rules:
-            if isinstance(rule, FimSensitiveFileRule):
+            if isinstance(rule, (FimSensitiveFileRule, FimDroppedBinaryRule)):
                 res = rule.evaluate(context)
                 if res:
                     results.append(res)

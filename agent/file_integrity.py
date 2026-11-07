@@ -36,16 +36,16 @@ def compute_sha256(file_path: str, max_size: int = DEFAULT_MAX_FILE_SIZE) -> Opt
     """Calculate the SHA-256 hexadecimal hash of a regular file.
 
     Returns:
-        Lowercase 64-character hexadecimal SHA-256 string, or None if reading fails
-        or file exceeds max_size.
+        Lowercase 64-character hexadecimal SHA-256 string, or None if reading fails,
+        file is a symlink, or file exceeds max_size.
     """
     try:
-        path = Path(file_path)
-        if not path.is_file():
+        # Check lstat to avoid reading through symlinks
+        st = os.lstat(file_path)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
             return None
 
-        # Check file size before hashing
-        file_size = path.stat().st_size
+        file_size = st.st_size
         if file_size > max_size:
             logger.warning("File %s exceeds max hash size (%d bytes), skipping", file_path, file_size)
             return None
@@ -64,38 +64,63 @@ def compute_sha256(file_path: str, max_size: int = DEFAULT_MAX_FILE_SIZE) -> Opt
         return None
 
 
-def inspect_file(file_path: str, max_size: int = DEFAULT_MAX_FILE_SIZE) -> Optional[Dict[str, Any]]:
+def inspect_file(
+    file_path: str,
+    max_size: int = DEFAULT_MAX_FILE_SIZE,
+    previous_record: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """Inspect a single regular file and extract FIM metadata.
 
     Returns:
         Dictionary containing path, sha256, size, mtime_ns, file_mode, and state='present'.
-        Returns None if file is not a regular file or cannot be read.
+        Returns None if file is not a regular file, is a symlink, or cannot be read.
     """
     try:
-        resolved_path = str(Path(file_path).resolve())
-        st = os.stat(resolved_path, follow_symlinks=False)
+        # Check lstat first to reject symlinks and prevent traversal / TOCTOU
+        st = os.lstat(file_path)
+        if stat.S_ISLNK(st.st_mode):
+            logger.debug("Skipping symlink %s to avoid traversal/TOCTOU", file_path)
+            return None
 
         # Only monitor regular files (skip sockets, fifos, character/block devices)
         if not stat.S_ISREG(st.st_mode):
             return None
 
-        sha256_hash = compute_sha256(resolved_path, max_size=max_size)
-        if sha256_hash is None:
+        resolved_path = str(Path(file_path).resolve())
+        # Ensure resolved path is still a regular file
+        st_res = os.stat(resolved_path, follow_symlinks=False)
+        if not stat.S_ISREG(st_res.st_mode):
             return None
 
-        # File mode permissions (octal mask 0o7777: suid, sgid, sticky, rwx)
-        file_mode = st.st_mode & 0o7777
-        mtime_ns = int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9)))
+        file_mode = st_res.st_mode & 0o7777
+        mtime_ns = int(getattr(st_res, "st_mtime_ns", int(st_res.st_mtime * 1e9)))
+        file_size = st_res.st_size
+
+        # Quick check optimization: If size, mtime, and mode haven't changed, reuse cached sha256
+        if (
+            previous_record
+            and previous_record.get("sha256")
+            and previous_record.get("mtime_ns") == mtime_ns
+            and previous_record.get("file_size_bytes") == file_size
+            and previous_record.get("file_mode") == file_mode
+        ):
+            sha256_hash = previous_record["sha256"]
+        else:
+            sha256_hash = compute_sha256(resolved_path, max_size=max_size)
+            if sha256_hash is None:
+                return None
+
         now = _utc_now()
+        first_seen = previous_record.get("first_seen_at", now) if previous_record else now
 
         return {
             "file_path": resolved_path,
             "sha256": sha256_hash,
-            "file_size_bytes": st.st_size,
+            "file_size_bytes": file_size,
             "mtime_ns": mtime_ns,
             "file_mode": file_mode,
             "state": "present",
-            "first_seen_at": now,
+            "first_seen_at": first_seen,
             "last_seen_at": now,
             "last_checked_at": now,
         }
@@ -109,6 +134,7 @@ def scan_monitored_paths(
     monitored_paths: List[str],
     recursive: bool = True,
     max_file_size: int = DEFAULT_MAX_FILE_SIZE,
+    previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Scan all configured files and directories.
 
@@ -116,6 +142,7 @@ def scan_monitored_paths(
         Mapping of {normalized_file_path: file_record}.
     """
     results: Dict[str, Dict[str, Any]] = {}
+    prev_map = previous_baseline or {}
 
     for target in monitored_paths:
         try:
@@ -124,8 +151,18 @@ def scan_monitored_paths(
                 logger.debug("Monitored target does not exist: %s", target)
                 continue
 
+            # Skip symlink targets
+            if target_path.is_symlink():
+                logger.debug("Skipping symlink target %s", target)
+                continue
+
             if target_path.is_file():
-                record = inspect_file(str(target_path), max_size=max_file_size)
+                resolved_key = str(target_path)
+                record = inspect_file(
+                    resolved_key,
+                    max_size=max_file_size,
+                    previous_record=prev_map.get(resolved_key),
+                )
                 if record:
                     results[record["file_path"]] = record
                 continue
@@ -134,9 +171,20 @@ def scan_monitored_paths(
                 for root, _, files in os.walk(str(target_path), followlinks=False):
                     for file_name in files:
                         full_path = os.path.join(root, file_name)
-                        record = inspect_file(full_path, max_size=max_file_size)
-                        if record:
-                            results[record["file_path"]] = record
+                        try:
+                            # Reject symlinks inside scanned directory
+                            if os.path.islink(full_path):
+                                continue
+                            resolved_key = str(Path(full_path).resolve())
+                            record = inspect_file(
+                                full_path,
+                                max_size=max_file_size,
+                                previous_record=prev_map.get(resolved_key),
+                            )
+                            if record:
+                                results[record["file_path"]] = record
+                        except (PermissionError, OSError):
+                            continue
                     if not recursive:
                         break
         except (PermissionError, OSError) as exc:
@@ -328,12 +376,13 @@ class FileIntegrityMonitor:
         self.max_file_size = max_file_size
         self.baseline: Dict[str, Dict[str, Any]] = {}
 
-    def scan(self) -> Dict[str, Dict[str, Any]]:
+    def scan(self, previous_baseline: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Dict[str, Any]]:
         """Perform a scan of all configured monitored paths."""
         return scan_monitored_paths(
             self.monitored_paths,
             recursive=self.recursive,
             max_file_size=self.max_file_size,
+            previous_baseline=previous_baseline,
         )
 
     def initialize_baseline(self) -> int:
@@ -341,10 +390,19 @@ class FileIntegrityMonitor:
         self.baseline = self.scan()
         return len(self.baseline)
 
+    def scan_for_changes(self) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+        """Perform a scan and calculate changes without committing to internal baseline."""
+        current_scan = self.scan(previous_baseline=self.baseline)
+        return detect_file_changes(self.baseline, current_scan)
+
+    def commit_baseline(self, new_baseline: Dict[str, Dict[str, Any]]) -> None:
+        """Commit new baseline state after successful transmission."""
+        self.baseline = new_baseline
+
     def check_for_changes(self) -> List[Dict[str, Any]]:
         """Perform a scan, update internal baseline, and return detected change events."""
-        current_scan = self.scan()
-        self.baseline, events = detect_file_changes(self.baseline, current_scan)
+        new_baseline, events = self.scan_for_changes()
+        self.baseline = new_baseline
         return events
 
     def get_baseline_sync_payload(self, message_id: Optional[str] = None) -> Dict[str, Any]:

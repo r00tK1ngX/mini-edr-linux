@@ -14,7 +14,7 @@
 
 This document defines the data contract between the Mini EDR Linux Agent and the Flask Server. It specifies message envelopes, resource payloads, field constraints, timestamp ownership, validation, idempotency, retry behavior, and trust boundaries.
 
-All listed Agent modules, API endpoints, schema validators, DAL repositories, and database behaviors are fully implemented and verified with automated test suites (214/214 passing tests).
+All listed Agent modules, API endpoints, schema validators, DAL repositories, and database behaviors are fully implemented and verified with automated test suites (230/230 passing tests).
 
 ## 2. Compatibility and scope
 
@@ -40,7 +40,7 @@ Example:
 }
 ```
 
-The current heartbeat API requires `agent_id`, `hostname`, and `os`; `ip_address` and `agent_version` are optional; metrics are accepted in the `metrics` object. The existing implementation is a full update of the endpoint's metric fields: omitted metric values are written as NULL. Agent implementations must therefore send the complete current heartbeat metric set when they intend to refresh those fields.
+The current heartbeat API requires `agent_id`, `hostname`, and `os`; `ip_address` and `agent_version` are optional; metrics are accepted in the `metrics` object. To prevent accidental metadata loss on subsequent heartbeats, the server database uses `COALESCE` semantics: existing endpoint metadata (`hostname`, `ip_address`, `os`, `agent_version`) is preserved when omitted or null in periodic heartbeats.
 
 Do not silently change the heartbeat payload. Any future migration to a common envelope must be a separately reviewed and tested compatibility change.
 
@@ -252,13 +252,18 @@ Each process object:
 |---|---|---:|---|
 | `pid` | integer | Yes | Greater than or equal to 0 |
 | `ppid` | integer or null | No | Greater than or equal to 0 when non-null |
-| `process_name` | string | Yes | Non-empty |
+| `process_name` / `name` | string | Yes | Non-empty process identifier |
 | `username` | string or null | No | Null when unavailable |
 | `exe_path` | string or null | No | Null when unavailable |
+| `cmdline` | string or null | No | Command line string or null when unavailable |
 | `cpu_percent` | number or null | No | Finite and greater than or equal to 0 |
 | `memory_percent` | number or null | No | Finite; 0–100 inclusive |
 | `rss_bytes` | integer or null | No | Greater than or equal to 0 |
 | `process_started_at` | timestamp or null | No | UTC when available |
+
+> [!NOTE]
+> **Academic Implementation Note on `cmdline`:**
+> In this educational project, process collection extracts 9 core attributes via `psutil` / Linux `/proc`. `cmdline` is captured for threat context (such as identifying reverse shell arguments). To avoid harvesting sensitive user credentials or environment variables in a lab setting, full invasive memory scraping is omitted by design.
 
 ### 6.2. Collection and persistence rules
 
@@ -286,6 +291,7 @@ Each process object:
 | `processes[].process_name` | `process_observations.process_name` |
 | `processes[].username` | `process_observations.username` |
 | `processes[].exe_path` | `process_observations.exe_path` |
+| `processes[].cmdline` | `process_observations.cmdline` |
 | `processes[].cpu_percent` | `process_observations.cpu_percent` |
 | `processes[].memory_percent` | `process_observations.memory_percent` |
 | `processes[].rss_bytes` | `process_observations.rss_bytes` |
@@ -343,6 +349,8 @@ Example:
 - A missing-state update is valid only for a file that already has a known baseline.
 - A file omitted from a batch must not automatically be interpreted as deleted.
 - The Agent must explicitly report a missing state.
+- **Two-Phase Commit Guarantee:** FIM changes are identified via `scan_for_changes()` and committed to the local baseline state (`commit_baseline()`) ONLY after the generated security events have been successfully transmitted and acknowledged with HTTP 201 by the Server. If transmission fails (e.g., temporary network disconnection), the baseline is not updated, guaranteeing that events will not be lost.
+- **Symlink Traversal & TOCTOU Defense:** The Agent uses `os.lstat()` and verifies `stat.S_ISLNK()` before hashing or inspecting files, preventing symlink redirection to unauthorized system files. Quick-check caching (`mtime_ns`, `file_size_bytes`, `file_mode`) avoids unnecessary full file reads.
 
 The current `file_baselines` table does not have a batch `message_id` or receipt record. Therefore, the defined retry safety for this resource is row-level upsert by `(agent_id, file_path)`; durable batch-level deduplication is not currently represented in the schema.
 
